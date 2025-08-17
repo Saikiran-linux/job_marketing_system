@@ -1,0 +1,172 @@
+SYSTEM WORKFLOW DIAGRAM
+========================
+
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│    USER     │───▶│ORCHESTRATOR│───▶│  JOB SEARCH│
+│   INPUT     │    │    AGENT    │    │    AGENT    │
+└─────────────┘    └─────────────┘    └─────────────┘
+                           │                │
+                           ▼                ▼
+                   ┌─────────────┐    ┌─────────────┐
+                   │  WORKFLOW   │    │   MULTIPLE  │
+                   │   ENGINE    │    │  JOB SOURCES│
+                   └─────────────┘    │             │
+                           │          │ • Indeed    │
+                           ▼          │ • LinkedIn  │
+                   ┌─────────────┐    │ • Glassdoor │
+                   │   SKILLS    │◀───┘             │
+                   │  ANALYSIS   │                  │
+                   │    AGENT    │                  │
+                   └─────────────┘                  │
+                           │                        │
+                           ▼                        │
+                   ┌─────────────┐    ┌─────────────┐
+                   │   RESUME    │───▶│   OPENAI    │
+                   │  ANALYSIS   │    │     API     │
+                   │    AGENT    │    └─────────────┘
+                   └─────────────┘
+                           │
+                           ▼
+                   ┌─────────────┐    ┌─────────────┐
+                   │   RESUME    │───▶│   OPENAI    │
+                   │MODIFICATION │    │     API     │
+                   │    AGENT    │    └─────────────┘
+                   └─────────────┘
+                           │
+                           ▼
+                   ┌─────────────┐    ┌─────────────┐
+                   │APPLICATION  │───▶│     WEB     │
+                   │    AGENT    │    │AUTOMATION   │
+                   └─────────────┘    └─────────────┘
+                           │
+                           ▼
+                   ┌─────────────┐    ┌─────────────┐
+                   │   SQLITE    │◀───│    REPORT   │
+                   │  DATABASE   │    │  GENERATOR  │
+                   └─────────────┘    └─────────────┘
+
+DETAILED COMPONENT INTERACTIONS
+================================
+
+1. USER INPUT PHASE
+   ┌─────────────┐
+   │ User runs:  │
+   │ python main.py │
+   │ --role "SWE" │
+   │ --resume doc │
+   └─────────────┘
+           │
+           ▼
+
+2. ORCHESTRATION PHASE
+   ┌─────────────────────────────────┐
+   │ Orchestrator Agent              │
+   │ ├── Validates input             │
+   │ ├── Creates session             │
+   │ ├── Plans workflow              │
+   │ └── Coordinates agents          │
+   └─────────────────────────────────┘
+           │
+           ▼
+
+3. JOB DISCOVERY PHASE
+   ┌─────────────────────────────────┐
+   │ Job Search Agent                │
+   │ ├── Searches Indeed             │
+   │ ├── Searches LinkedIn           │
+   │ ├── Searches Glassdoor         │
+   │ └── Returns job listings       │
+   └─────────────────────────────────┘
+           │
+           ▼
+
+4. SKILLS ANALYSIS PHASE
+   ┌─────────────────────────────────┐
+   │ Skills Analysis Agent           │
+   │ ├── Extracts job descriptions   │
+   │ ├── Uses OpenAI for analysis   │
+   │ ├── Identifies required skills │
+   │ └── Calculates skill priorities│
+   └─────────────────────────────────┘
+           │
+           ▼
+
+5. RESUME PROCESSING PHASE
+   ┌─────────────────────────────────┐
+   │ Resume Analysis Agent           │
+   │ ├── Parses current resume      │
+   │ ├── Extracts current skills    │
+   │ └── Identifies skill gaps      │
+   └─────────────────────────────────┘
+           │
+           ▼
+   ┌─────────────────────────────────┐
+   │ Resume Modification Agent       │
+   │ ├── Uses OpenAI for optimization│
+   │ ├── Fills skill gaps           │
+   │ ├── Optimizes for ATS          │
+   │ └── Generates new resume       │
+   └─────────────────────────────────┘
+           │
+           ▼
+
+6. APPLICATION PHASE
+   ┌─────────────────────────────────┐
+   │ Application Agent               │
+   │ ├── Navigates to job site      │
+   │ ├── Fills application forms    │
+   │ ├── Uploads optimized resume   │
+   │ └── Submits application        │
+   └─────────────────────────────────┘
+           │
+           ▼
+
+7. TRACKING & REPORTING PHASE
+   ┌─────────────────────────────────┐
+   │ Database & Reporting            │
+   │ ├── Stores application data    │
+   │ ├── Tracks success rates       │
+   │ ├── Generates analytics        │
+   │ └── Provides insights          │
+   └─────────────────────────────────┘
+
+SAFETY MECHANISMS
+==================
+
+┌─────────────────────────────────────────────────────────┐
+│                    SAFETY LAYER                        │
+├─────────────────────────────────────────────────────────┤
+│ • Rate Limiting: Built-in delays between requests      │
+│ • Input Validation: All inputs sanitized               │
+│ • Error Handling: Comprehensive recovery               │
+│ • Simulation Mode: Test without applying               │
+│ • Daily Limits: Configurable application caps          │
+│ • Audit Logging: Complete activity trail               │
+│ • Anti-bot Measures: Respectful crawling               │
+└─────────────────────────────────────────────────────────┘
+
+DATA STORAGE ARCHITECTURE
+==========================
+
+┌─────────────────────────────────────────────────────────┐
+│                    STORAGE LAYER                       │
+├─────────────────────────────────────────────────────────┤
+│ • SQLite Database: Application tracking & analytics    │
+│ • File System: Resume storage & generated content      │
+│ • Logs: Application activity & error tracking          │
+│ • Cache: Session data & temporary storage              │
+│ • Reports: Analytics & insights storage                │
+└─────────────────────────────────────────────────────────┘
+
+INTEGRATION POINTS
+==================
+
+┌─────────────────────────────────────────────────────────┐
+│                   EXTERNAL INTEGRATIONS                │
+├─────────────────────────────────────────────────────────┤
+│ • OpenAI API: AI-powered analysis & optimization       │
+│ • Job Board APIs: Job discovery & application          │
+│ • Web Automation: Selenium-based form filling          │
+│ • File Processing: Document parsing & generation       │
+│ • Database: SQLite for data persistence                │
+└─────────────────────────────────────────────────────────┘

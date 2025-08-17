@@ -1,0 +1,77 @@
+# Multi-Agent Job Application System Configuration
+# Copy this file to .env and fill in your actual values
+
+# =============================================================================
+# REQUIRED CONFIGURATION
+# =============================================================================
+
+# OpenAI API Configuration (REQUIRED for AI features)
+OPENAI_API_KEY=your_openai_api_key_here
+
+# =============================================================================
+# OPTIONAL JOB BOARD CREDENTIALS
+# =============================================================================
+
+# LinkedIn Credentials (for LinkedIn job applications)
+LINKEDIN_EMAIL=your_linkedin_email@example.com
+LINKEDIN_PASSWORD=your_linkedin_password
+
+# Indeed Credentials (for enhanced Indeed access)
+INDEED_EMAIL=your_indeed_email@example.com
+INDEED_PASSWORD=your_indeed_password
+
+# =============================================================================
+# APPLICATION SETTINGS
+# =============================================================================
+
+# Job Search Settings
+MAX_JOBS_PER_SOURCE=50
+DEFAULT_LOCATION=remote
+
+# Application Behavior
+APPLICATION_DELAY=5
+MAX_DAILY_APPLICATIONS=300
+SKILL_MATCH_THRESHOLD=0.7
+
+# =============================================================================
+# FILE PATHS
+# =============================================================================
+
+# Resume and Output Paths
+RESUME_TEMPLATE_PATH=./data/resume_template.docx
+OUTPUT_RESUME_DIR=./output/resumes/
+APPLICATION_LOG_DIR=./logs/
+
+# =============================================================================
+# DATABASE CONFIGURATION (Optional)
+# =============================================================================
+
+# SQLite database for tracking applications
+DATABASE_URL=sqlite:///job_applications.db
+
+# =============================================================================
+# SAFETY SETTINGS
+# =============================================================================
+
+# Safety limits to prevent overwhelming job sites
+MAX_REQUESTS_PER_MINUTE=10
+USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+
+# =============================================================================
+# INSTRUCTIONS
+# =============================================================================
+
+# 1. Copy this file to .env
+# 2. Replace placeholder values with your actual configuration
+# 3. Keep your .env file secure and never commit it to version control
+# 4. Run "python main.py --config-check" to validate your setup
+# 5. Start with "python main.py --dry-run" to test safely
+
+# For OpenAI API key:
+# 1. Go to https://platform.openai.com/api-keys
+# 2. Create a new API key
+# 3. Add billing information if you haven't already
+# 4. Replace "your_openai_api_key_here" with your actual key
+
+# IMPORTANT: The system works with just the OpenAI API key.
+# Job board credentials are optional and improve functionality.
