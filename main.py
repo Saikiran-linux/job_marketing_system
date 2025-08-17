@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Main entry point for the Multi-Agent Job Application System.
+Main entry point for the Job Marketing System.
 
 This script provides a command-line interface to run the job search and application workflow.
 """
@@ -26,7 +26,7 @@ async def main():
     
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description="Multi-Agent Job Application System",
+        description="Job Marketing System",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

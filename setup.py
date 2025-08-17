@@ -7,14 +7,14 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
     requirements = [line.strip() for line in fh.readlines() if line.strip() and not line.startswith("#")]
 
 setup(
-    name="multi-agent-job-application-system",
+    name="job-marketing-system",
     version="1.0.0",
-    author="Job Application System",
+    author="Job Marketing System",
     author_email="contact@example.com",
     description="An intelligent, automated job search and application system using multiple AI agents",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/multi-agent-job-application-system",
+    url="https://github.com/Saikiran-linux/job_marketing_system",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 4 - Beta",
@@ -44,7 +44,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "job-agent=main:main",
+            "job-marketing-system=main:main",
         ],
     },
     include_package_data=True,

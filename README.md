@@ -1,4 +1,4 @@
-# Multi-Agent Job Application System
+# Job Marketing System
 
 An intelligent, automated job search and application system that uses multiple AI agents to find jobs, analyze requirements, optimize resumes, and submit applications.
 
@@ -32,8 +32,8 @@ The system consists of six specialized agents:
 
 1. **Clone the repository**:
    ```bash
-   git clone <repository-url>
-   cd marketin_jobs_
+   git clone https://github.com/Saikiran-linux/job_marketing_system.git
+   cd job_marketing_system
    ```
 
 2. **Install dependencies**:
@@ -109,7 +109,7 @@ python main.py --session-id "session_20240101_120000"
 ## 📁 File Structure
 
 ```
-marketin_jobs_/
+job_marketing_system/
 ├── agents/                     # AI agents
 │   ├── base_agent.py          # Base agent class
 │   ├── job_search_agent.py    # Job searching
