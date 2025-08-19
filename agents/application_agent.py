@@ -1,7 +1,8 @@
 import asyncio
 import os
 import time
-from typing import Dict, Any, List
+import json
+from typing import Dict, Any, List, Optional
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
@@ -29,25 +30,616 @@ class ApplicationAgent(BaseAgent):
         self.linkedin_agent = None
         self.application_count = 0
         self.daily_limit = Config.MAX_DAILY_APPLICATIONS
+        self.application_history = []
     
     async def execute(self, state: AgentState) -> AgentState:
         """Apply to a job with the provided information."""
         
-        # For application, we need to get the job-specific data from the context
-        # This agent is typically called during job processing, not from the main workflow state
-        # We'll create a temporary state or use the existing state if it has job information
+        try:
+            # Check if we have job information in the state
+            if not state.job_search_results:
+                state.error = "No job information available for application"
+                return state
+            
+            # Get current job details
+            current_job = state.job_search_results.get("current_job", {})
+            if not current_job:
+                state.error = "No current job information for application"
+                return state
+            
+            # Check if auto-apply is enabled
+            if not state.auto_apply:
+                self.log_action("INFO", "Auto-apply disabled, skipping application")
+                state.steps_completed.append("application_skipped")
+                state.current_step = "application_skipped"
+                return state
+            
+            # Check daily application limit
+            if self.application_count >= self.daily_limit:
+                self.log_action("WARNING", f"Daily application limit ({self.daily_limit}) reached")
+                state.error = f"Daily application limit ({self.daily_limit}) reached"
+                return state
+            
+            # Get resume path (use modified resume if available)
+            resume_path = state.resume_path
+            if state.resume_modification and state.resume_modification.get("modified_resume_path"):
+                resume_path = state.resume_modification["modified_resume_path"]
+                self.log_action("INFO", f"Using modified resume: {resume_path}")
+            
+            # Perform job application
+            application_result = await self.apply_to_job(
+                current_job,
+                resume_path,
+                state.resume_analysis
+            )
+            
+            if application_result.get("status") == "success":
+                # Update application count and history
+                self.application_count += 1
+                self.application_history.append({
+                    "job_id": current_job.get("id", ""),
+                    "job_title": current_job.get("title", ""),
+                    "company": current_job.get("company", ""),
+                    "application_date": datetime.now().isoformat(),
+                    "status": "submitted",
+                    "resume_used": resume_path
+                })
+                
+                # Update state
+                state.steps_completed.append("application_submitted")
+                state.current_step = "application_complete"
+                state.application_result = application_result
+                
+                self.log_action("SUCCESS", f"Successfully applied to {current_job.get('title', 'Unknown')} at {current_job.get('company', 'Unknown')}")
+                
+            else:
+                state.error = f"Application failed: {application_result.get('error', 'Unknown error')}"
+                self.log_action("ERROR", f"Application failed: {application_result.get('error', 'Unknown error')}")
+            
+            return state
+            
+        except Exception as e:
+            self.log_action("ERROR", f"Application execution failed: {str(e)}")
+            state.error = f"Application execution failed: {str(e)}"
+            return state
+    
+    async def apply_to_job(self, job_info: Dict[str, Any], 
+                          resume_path: str, 
+                          resume_analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply to a specific job."""
         
-        # Since this agent is called during job processing, we need to handle the case
-        # where we don't have direct access to job description in the main state
-        # For now, we'll return the state as-is and handle the actual application in the calling context
+        try:
+            job_title = job_info.get("title", "")
+            company_name = job_info.get("company", "")
+            job_url = job_info.get("url", "")
+            job_source = job_info.get("source", "").lower()
+            
+            self.log_action("APPLYING", f"Applying to {job_title} at {company_name} via {job_source}")
+            
+            # Generate cover letter
+            cover_letter = await self.generate_cover_letter(
+                job_info, resume_analysis, company_name
+            )
+            
+            # Apply based on job source
+            if "linkedin" in job_source:
+                application_result = await self._apply_via_linkedin(
+                    job_info, resume_path, cover_letter
+                )
+            elif "indeed" in job_source:
+                application_result = await self._apply_via_indeed(
+                    job_info, resume_path, cover_letter
+                )
+            else:
+                # Generic application method
+                application_result = await self._apply_generic(
+                    job_info, resume_path, cover_letter
+                )
+            
+            # Add metadata
+            application_result.update({
+                "job_title": job_title,
+                "company_name": company_name,
+                "job_source": job_source,
+                "application_timestamp": datetime.now().isoformat(),
+                "resume_used": resume_path,
+                "cover_letter_generated": bool(cover_letter)
+            })
+            
+            return application_result
+            
+        except Exception as e:
+            self.log_action("ERROR", f"Job application failed: {str(e)}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "application_timestamp": datetime.now().isoformat()
+            }
+    
+    async def generate_cover_letter(self, job_info: Dict[str, Any], 
+                                  resume_analysis: Dict[str, Any], 
+                                  company_name: str) -> str:
+        """Generate a personalized cover letter for the job."""
         
-        self.log_action("INFO", "Application agent called - job-specific application handled in calling context")
+        if not self.client:
+            return self._generate_basic_cover_letter(job_info, resume_analysis, company_name)
         
-        # Update state to indicate application step
-        state.steps_completed.append("application")
-        state.current_step = "application_complete"
+        try:
+            job_title = job_info.get("title", "")
+            job_description = job_info.get("description", "")
+            current_skills = [skill["skill"] for skill in resume_analysis.get("current_skills", [])]
+            
+            prompt = f"""
+            Generate a compelling cover letter for a {job_title} position at {company_name}.
+            
+            Job Description:
+            {job_description[:1000]}
+            
+            Candidate Skills: {', '.join(current_skills[:10])}
+            
+            Requirements:
+            1. Keep it professional and concise (200-300 words)
+            2. Highlight relevant skills and experience
+            3. Show enthusiasm for the company and role
+            4. Include specific examples from the job description
+            5. End with a call to action
+            6. Maintain a confident but humble tone
+            
+            Format the response as a proper cover letter with:
+            - Professional greeting
+            - Opening paragraph (interest in the role)
+            - Body paragraph (relevant experience and skills)
+            - Closing paragraph (enthusiasm and call to action)
+            - Professional closing
+            """
+            
+            response = await self.client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": "You are an expert cover letter writer. Create compelling, personalized cover letters that help candidates stand out."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=500,
+                temperature=0.7
+            )
+            
+            cover_letter = response.choices[0].message.content.strip()
+            self.log_action("SUCCESS", "Cover letter generated successfully")
+            return cover_letter
+            
+        except Exception as e:
+            self.log_action("WARNING", f"AI cover letter generation failed: {str(e)}")
+            return self._generate_basic_cover_letter(job_info, resume_analysis, company_name)
+    
+    def _generate_basic_cover_letter(self, job_info: Dict[str, Any], 
+                                   resume_analysis: Dict[str, Any], 
+                                   company_name: str) -> str:
+        """Generate a basic cover letter without AI."""
         
-        return state
+        job_title = job_info.get("title", "")
+        current_skills = [skill["skill"] for skill in resume_analysis.get("current_skills", [])]
+        
+        cover_letter = f"""
+Dear Hiring Manager,
+
+I am writing to express my strong interest in the {job_title} position at {company_name}. With my background in {', '.join(current_skills[:3])} and related technologies, I am confident in my ability to contribute effectively to your team.
+
+My experience includes working with {', '.join(current_skills[:5])} and I am particularly excited about the opportunity to apply these skills in a dynamic environment like {company_name}. I am passionate about continuous learning and staying current with industry best practices.
+
+I would welcome the opportunity to discuss how my skills and experience align with your needs. Thank you for considering my application.
+
+Best regards,
+[Your Name]
+        """.strip()
+        
+        return cover_letter
+    
+    async def _apply_via_linkedin(self, job_info: Dict[str, Any], 
+                                 resume_path: str, 
+                                 cover_letter: str) -> Dict[str, Any]:
+        """Apply to a job via LinkedIn."""
+        
+        try:
+            self.log_action("INFO", "Applying via LinkedIn")
+            
+            # Initialize LinkedIn agent if not already done
+            if not self.linkedin_agent:
+                self.linkedin_agent = LinkedInAgent()
+            
+            # Use LinkedIn agent for application
+            application_result = await self.linkedin_agent.apply_to_job(
+                job_info, resume_path, cover_letter
+            )
+            
+            return application_result
+            
+        except Exception as e:
+            self.log_action("ERROR", f"LinkedIn application failed: {str(e)}")
+            return {
+                "status": "error",
+                "error": f"LinkedIn application failed: {str(e)}",
+                "method": "linkedin"
+            }
+    
+    async def _apply_via_indeed(self, job_info: Dict[str, Any], 
+                               resume_path: str, 
+                               cover_letter: str) -> Dict[str, Any]:
+        """Apply to a job via Indeed."""
+        
+        try:
+            self.log_action("INFO", "Applying via Indeed")
+            
+            # Initialize browser if needed
+            await self._init_browser()
+            
+            # Navigate to job page
+            job_url = job_info.get("url", "")
+            if not job_url:
+                return {
+                    "status": "error",
+                    "error": "No job URL provided",
+                    "method": "indeed"
+                }
+            
+            self.driver.get(job_url)
+            await asyncio.sleep(3)  # Wait for page load
+            
+            # Look for apply button
+            apply_button = None
+            try:
+                # Common Indeed apply button selectors
+                selectors = [
+                    "button[data-indeed-apply-button-enabled='true']",
+                    "button[aria-label*='Apply']",
+                    "button:contains('Apply')",
+                    "a[href*='apply']",
+                    ".indeed-apply-button"
+                ]
+                
+                for selector in selectors:
+                    try:
+                        if "contains" in selector:
+                            # Handle text-based selection
+                            elements = self.driver.find_elements(By.TAG_NAME, "button")
+                            for elem in elements:
+                                if "apply" in elem.text.lower():
+                                    apply_button = elem
+                                    break
+                        else:
+                            apply_button = self.driver.find_element(By.CSS_SELECTOR, selector)
+                            break
+                    except:
+                        continue
+                
+                if not apply_button:
+                    return {
+                        "status": "error",
+                        "error": "Apply button not found",
+                        "method": "indeed"
+                    }
+                
+                # Click apply button
+                apply_button.click()
+                await asyncio.sleep(2)
+                
+                # Handle application form
+                application_result = await self._handle_application_form(
+                    job_info, resume_path, cover_letter, "indeed"
+                )
+                
+                return application_result
+                
+            except Exception as e:
+                return {
+                    "status": "error",
+                    "error": f"Indeed application failed: {str(e)}",
+                    "method": "indeed"
+                }
+                
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": f"Indeed application failed: {str(e)}",
+                "method": "indeed"
+            }
+    
+    async def _apply_generic(self, job_info: Dict[str, Any], 
+                            resume_path: str, 
+                            cover_letter: str) -> Dict[str, Any]:
+        """Generic application method for unknown job sources."""
+        
+        try:
+            self.log_action("INFO", "Using generic application method")
+            
+            # Initialize browser if needed
+            await self._init_browser()
+            
+            # Navigate to job page
+            job_url = job_info.get("url", "")
+            if not job_url:
+                return {
+                    "status": "error",
+                    "error": "No job URL provided",
+                    "method": "generic"
+                }
+            
+            self.driver.get(job_url)
+            await asyncio.sleep(3)
+            
+            # Look for common apply patterns
+            apply_patterns = [
+                "//button[contains(text(), 'Apply')]",
+                "//a[contains(text(), 'Apply')]",
+                "//input[@value='Apply']",
+                "//button[contains(@class, 'apply')]",
+                "//a[contains(@href, 'apply')]"
+            ]
+            
+            apply_button = None
+            for pattern in apply_patterns:
+                try:
+                    apply_button = self.driver.find_element(By.XPATH, pattern)
+                    break
+                except:
+                    continue
+            
+            if not apply_button:
+                return {
+                    "status": "error",
+                    "error": "Apply button not found",
+                    "method": "generic"
+                }
+            
+            # Click apply button
+            apply_button.click()
+            await asyncio.sleep(2)
+            
+            # Handle application form
+            application_result = await self._handle_application_form(
+                job_info, resume_path, cover_letter, "generic"
+            )
+            
+            return application_result
+            
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": f"Generic application failed: {str(e)}",
+                "method": "generic"
+            }
+    
+    async def _handle_application_form(self, job_info: Dict[str, Any], 
+                                     resume_path: str, 
+                                     cover_letter: str, 
+                                     method: str) -> Dict[str, Any]:
+        """Handle the application form after clicking apply."""
+        
+        try:
+            self.log_action("INFO", f"Handling application form via {method}")
+            
+            # Wait for form to load
+            await asyncio.sleep(3)
+            
+            # Common form field patterns
+            form_fields = {
+                "name": ["input[name*='name']", "input[id*='name']", "input[placeholder*='name']"],
+                "email": ["input[type='email']", "input[name*='email']", "input[id*='email']"],
+                "phone": ["input[type='tel']", "input[name*='phone']", "input[id*='phone']"],
+                "resume": ["input[type='file']", "input[accept*='pdf']", "input[accept*='doc']"]
+            }
+            
+            # Fill basic information
+            for field_type, selectors in form_fields.items():
+                if field_type == "resume":
+                    continue  # Handle resume upload separately
+                
+                field_value = self._get_field_value(field_type, job_info)
+                if not field_value:
+                    continue
+                
+                field_found = False
+                for selector in selectors:
+                    try:
+                        field = self.driver.find_element(By.CSS_SELECTOR, selector)
+                        field.clear()
+                        field.send_keys(field_value)
+                        field_found = True
+                        break
+                    except:
+                        continue
+                
+                if not field_found:
+                    self.log_action("WARNING", f"Could not find {field_type} field")
+            
+            # Handle resume upload
+            resume_uploaded = await self._upload_resume(resume_path)
+            
+            # Handle cover letter if there's a text area
+            cover_letter_added = False
+            if cover_letter:
+                cover_letter_added = await self._add_cover_letter(cover_letter)
+            
+            # Look for submit button
+            submit_button = None
+            submit_selectors = [
+                "button[type='submit']",
+                "input[type='submit']",
+                "button:contains('Submit')",
+                "button:contains('Send')",
+                "button[class*='submit']"
+            ]
+            
+            for selector in submit_selectors:
+                try:
+                    if "contains" in selector:
+                        elements = self.driver.find_elements(By.TAG_NAME, "button")
+                        for elem in elements:
+                            if any(word in elem.text.lower() for word in ["submit", "send", "apply"]):
+                                submit_button = elem
+                                break
+                    else:
+                        submit_button = self.driver.find_element(By.CSS_SELECTOR, selector)
+                        break
+                except:
+                    continue
+            
+            if submit_button:
+                # Take screenshot before submitting
+                screenshot_path = await self._take_screenshot("before_submit")
+                
+                # Submit application
+                submit_button.click()
+                await asyncio.sleep(3)
+                
+                # Check for success indicators
+                success_indicators = [
+                    "//*[contains(text(), 'Thank you')]",
+                    "//*[contains(text(), 'Application submitted')]",
+                    "//*[contains(text(), 'Success')]",
+                    "//*[contains(text(), 'Submitted')]"
+                ]
+                
+                application_successful = False
+                for indicator in success_indicators:
+                    try:
+                        self.driver.find_element(By.XPATH, indicator)
+                        application_successful = True
+                        break
+                    except:
+                        continue
+                
+                if application_successful:
+                    return {
+                        "status": "success",
+                        "method": method,
+                        "resume_uploaded": resume_uploaded,
+                        "cover_letter_added": cover_letter_added,
+                        "screenshot_before": screenshot_path,
+                        "submission_timestamp": datetime.now().isoformat()
+                    }
+                else:
+                    return {
+                        "status": "pending",
+                        "method": method,
+                        "message": "Application submitted but success confirmation unclear",
+                        "resume_uploaded": resume_uploaded,
+                        "cover_letter_added": cover_letter_added,
+                        "screenshot_before": screenshot_path
+                    }
+            else:
+                return {
+                    "status": "error",
+                    "error": "Submit button not found",
+                    "method": method
+                }
+                
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": f"Form handling failed: {str(e)}",
+                "method": method
+            }
+    
+    def _get_field_value(self, field_type: str, job_info: Dict[str, Any]) -> str:
+        """Get appropriate value for form fields."""
+        
+        # This would typically come from user configuration or profile
+        # For now, return placeholder values
+        field_values = {
+            "name": "John Doe",  # Should come from user profile
+            "email": "john.doe@example.com",  # Should come from user profile
+            "phone": "(555) 123-4567"  # Should come from user profile
+        }
+        
+        return field_values.get(field_type, "")
+    
+    async def _upload_resume(self, resume_path: str) -> bool:
+        """Upload resume file to the application form."""
+        
+        try:
+            if not os.path.exists(resume_path):
+                self.log_action("ERROR", f"Resume file not found: {resume_path}")
+                return False
+            
+            # Look for file upload field
+            file_selectors = [
+                "input[type='file']",
+                "input[accept*='pdf']",
+                "input[accept*='doc']",
+                "input[accept*='docx']"
+            ]
+            
+            for selector in file_selectors:
+                try:
+                    file_input = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    file_input.send_keys(os.path.abspath(resume_path))
+                    self.log_action("SUCCESS", f"Resume uploaded: {resume_path}")
+                    return True
+                except:
+                    continue
+            
+            self.log_action("WARNING", "Could not find file upload field")
+            return False
+            
+        except Exception as e:
+            self.log_action("ERROR", f"Resume upload failed: {str(e)}")
+            return False
+    
+    async def _add_cover_letter(self, cover_letter: str) -> bool:
+        """Add cover letter to the application form."""
+        
+        try:
+            # Look for text area or input field for cover letter
+            cover_letter_selectors = [
+                "textarea[name*='cover']",
+                "textarea[id*='cover']",
+                "textarea[placeholder*='cover']",
+                "textarea[name*='letter']",
+                "textarea[id*='letter']",
+                "textarea[placeholder*='letter']",
+                "textarea[name*='message']",
+                "textarea[id*='message']",
+                "textarea[placeholder*='message']"
+            ]
+            
+            for selector in cover_letter_selectors:
+                try:
+                    text_area = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    text_area.clear()
+                    text_area.send_keys(cover_letter)
+                    self.log_action("SUCCESS", "Cover letter added to form")
+                    return True
+                except:
+                    continue
+            
+            self.log_action("WARNING", "Could not find cover letter field")
+            return False
+            
+        except Exception as e:
+            self.log_action("ERROR", f"Cover letter addition failed: {str(e)}")
+            return False
+    
+    async def _take_screenshot(self, prefix: str) -> str:
+        """Take a screenshot of the current page."""
+        
+        try:
+            # Create screenshots directory
+            screenshots_dir = "./screenshots"
+            os.makedirs(screenshots_dir, exist_ok=True)
+            
+            # Generate filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{prefix}_{timestamp}.png"
+            filepath = os.path.join(screenshots_dir, filename)
+            
+            # Take screenshot
+            self.driver.save_screenshot(filepath)
+            self.log_action("INFO", f"Screenshot saved: {filepath}")
+            return filepath
+            
+        except Exception as e:
+            self.log_action("WARNING", f"Screenshot failed: {str(e)}")
+            return ""
     
     async def _init_browser(self):
         """Initialize Selenium WebDriver."""
@@ -94,483 +686,72 @@ class ApplicationAgent(BaseAgent):
             except Exception as e:
                 self.log_action("WARNING", f"Error closing browser: {str(e)}")
     
-    async def _apply_to_job(self, job_url: str, resume_path: str, 
-                          cover_letter: str, job_title: str, company_name: str) -> Dict[str, Any]:
-        """Apply to a job based on the job site."""
+    async def get_application_tools(self) -> List[Dict[str, Any]]:
+        """Get available tools for job applications."""
         
-        # Determine job site
-        if "indeed.com" in job_url:
-            return await self._apply_indeed(job_url, resume_path, cover_letter)
-        elif "linkedin.com" in job_url:
-            return await self._apply_linkedin(job_url, resume_path, cover_letter)
-        elif "glassdoor.com" in job_url:
-            return await self._apply_glassdoor(job_url, resume_path, cover_letter)
-        else:
-            return await self._apply_generic(job_url, resume_path, cover_letter)
-    
-    async def _apply_indeed(self, job_url: str, resume_path: str, cover_letter: str) -> Dict[str, Any]:
-        """Apply to a job on Indeed."""
-        
-        try:
-            # Navigate to job page
-            self.driver.get(job_url)
-            await asyncio.sleep(2)
-            
-            # Look for apply button
-            apply_selectors = [
-                "//a[contains(@class, 'indeed-apply-button')]",
-                "//button[contains(@class, 'indeed-apply-button')]",
-                "//a[contains(text(), 'Apply Now')]",
-                "//button[contains(text(), 'Apply Now')]",
-                "//a[contains(@data-jk, 'apply')]",
-                "//button[contains(@data-jk, 'apply')]"
-            ]
-            
-            apply_button = None
-            for selector in apply_selectors:
-                try:
-                    apply_button = WebDriverWait(self.driver, 5).until(
-                        EC.element_to_be_clickable((By.XPATH, selector))
-                    )
-                    break
-                except TimeoutException:
-                    continue
-            
-            if not apply_button:
-                return {
-                    "status": "failed",
-                    "message": "Could not find apply button on Indeed"
+        return [
+            {
+                "name": "apply_to_job",
+                "description": "Apply to a specific job",
+                "parameters": {
+                    "job_info": "Job information dictionary",
+                    "resume_path": "Path to resume file",
+                    "resume_analysis": "Resume analysis data"
                 }
-            
-            # Click apply button
-            apply_button.click()
-            await asyncio.sleep(3)
-            
-            # Check if redirected to external site
-            if "indeed.com" not in self.driver.current_url:
-                return {
-                    "status": "redirected",
-                    "message": "Application redirected to external site",
-                    "redirect_url": self.driver.current_url
+            },
+            {
+                "name": "generate_cover_letter",
+                "description": "Generate personalized cover letter",
+                "parameters": {
+                    "job_info": "Job information dictionary",
+                    "resume_analysis": "Resume analysis data",
+                    "company_name": "Company name"
                 }
-            
-            # Fill out Indeed application form
-            return await self._fill_indeed_application_form(resume_path, cover_letter)
-            
-        except Exception as e:
-            return {
-                "status": "error",
-                "message": f"Indeed application failed: {str(e)}"
+            },
+            {
+                "name": "apply_via_linkedin",
+                "description": "Apply to job via LinkedIn",
+                "parameters": {
+                    "job_info": "Job information dictionary",
+                    "resume_path": "Path to resume file",
+                    "cover_letter": "Cover letter text"
+                }
+            },
+            {
+                "name": "apply_via_indeed",
+                "description": "Apply to job via Indeed",
+                "parameters": {
+                    "job_info": "Job information dictionary",
+                    "resume_path": "Path to resume file",
+                    "cover_letter": "Cover letter text"
+                }
+            },
+            {
+                "name": "get_application_status",
+                "description": "Get status of recent applications",
+                "parameters": {}
             }
-    
-    async def _fill_indeed_application_form(self, resume_path: str, cover_letter: str) -> Dict[str, Any]:
-        """Fill out Indeed's application form."""
-        
-        try:
-            steps_completed = []
-            
-            # Step 1: Upload resume
-            resume_upload = self._find_file_upload_input()
-            if resume_upload and os.path.exists(resume_path):
-                resume_upload.send_keys(os.path.abspath(resume_path))
-                steps_completed.append("resume_uploaded")
-                await asyncio.sleep(2)
-            
-            # Step 2: Fill cover letter if available
-            if cover_letter:
-                cover_letter_areas = self.driver.find_elements(By.XPATH, "//textarea")
-                for textarea in cover_letter_areas:
-                    if textarea.is_displayed() and textarea.is_enabled():
-                        textarea.clear()
-                        textarea.send_keys(cover_letter)
-                        steps_completed.append("cover_letter_added")
-                        break
-            
-            # Step 3: Fill any required fields with placeholder data
-            await self._fill_common_application_fields()
-            steps_completed.append("fields_filled")
-            
-            # Step 4: Submit application (optional - can be disabled for safety)
-            submit_button = None
-            submit_selectors = [
-                "//button[contains(text(), 'Submit')]",
-                "//input[@type='submit']",
-                "//button[@type='submit']",
-                "//a[contains(text(), 'Submit')]"
-            ]
-            
-            for selector in submit_selectors:
-                try:
-                    submit_button = self.driver.find_element(By.XPATH, selector)
-                    if submit_button.is_displayed() and submit_button.is_enabled():
-                        break
-                except NoSuchElementException:
-                    continue
-            
-            # For safety, we'll only simulate submission without actually clicking
-            if submit_button:
-                steps_completed.append("ready_to_submit")
-                # submit_button.click()  # Uncomment to actually submit
-                return {
-                    "status": "simulated",  # Change to "success" when actually submitting
-                    "message": "Application form filled (simulation mode)",
-                    "steps_completed": steps_completed
-                }
-            else:
-                return {
-                    "status": "partial",
-                    "message": "Form filled but could not find submit button",
-                    "steps_completed": steps_completed
-                }
-            
-        except Exception as e:
-            return {
-                "status": "error",
-                "message": f"Form filling failed: {str(e)}"
-            }
-    
-    def _find_file_upload_input(self):
-        """Find file upload input for resume."""
-        
-        upload_selectors = [
-            "//input[@type='file']",
-            "//input[contains(@name, 'resume')]",
-            "//input[contains(@name, 'cv')]",
-            "//input[contains(@id, 'resume')]",
-            "//input[contains(@id, 'cv')]"
         ]
-        
-        for selector in upload_selectors:
-            try:
-                upload_input = self.driver.find_element(By.XPATH, selector)
-                if upload_input.is_enabled():
-                    return upload_input
-            except NoSuchElementException:
-                continue
-        
-        return None
     
-    async def _fill_common_application_fields(self):
-        """Fill common application fields with default data."""
-        
-        # Common field mappings
-        field_data = {
-            "firstName": "John",
-            "first_name": "John",
-            "fname": "John",
-            "lastName": "Doe",
-            "last_name": "Doe",
-            "lname": "Doe",
-            "email": "john.doe@example.com",
-            "phone": "555-0123",
-            "phoneNumber": "555-0123",
-            "phone_number": "555-0123"
-        }
-        
-        # Fill text inputs
-        for field_name, value in field_data.items():
-            selectors = [
-                f"//input[@name='{field_name}']",
-                f"//input[@id='{field_name}']",
-                f"//input[contains(@name, '{field_name.lower()}')]"
-            ]
-            
-            for selector in selectors:
-                try:
-                    field = self.driver.find_element(By.XPATH, selector)
-                    if field.is_displayed() and field.is_enabled():
-                        field.clear()
-                        field.send_keys(value)
-                        break
-                except NoSuchElementException:
-                    continue
-    
-    async def _apply_linkedin(self, job_url: str, resume_path: str, cover_letter: str) -> Dict[str, Any]:
-        """Apply to a job on LinkedIn."""
-        
-        # LinkedIn requires authentication and has complex anti-bot measures
-        # This is a simplified placeholder implementation
-        
-        try:
-            self.driver.get(job_url)
-            await asyncio.sleep(3)
-            
-            # Check if login is required
-            if "login" in self.driver.current_url or "challenge" in self.driver.current_url:
-                return {
-                    "status": "authentication_required",
-                    "message": "LinkedIn requires login authentication"
-                }
-            
-            # Look for Easy Apply button
-            easy_apply_button = None
-            try:
-                easy_apply_button = WebDriverWait(self.driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'jobs-apply-button')]"))
-                )
-            except TimeoutException:
-                return {
-                    "status": "no_easy_apply",
-                    "message": "Easy Apply not available for this job"
-                }
-            
-            return {
-                "status": "requires_manual_login",
-                "message": "LinkedIn applications require manual login setup"
-            }
-            
-        except Exception as e:
-            return {
-                "status": "error",
-                "message": f"LinkedIn application failed: {str(e)}"
-            }
-    
-    async def _apply_glassdoor(self, job_url: str, resume_path: str, cover_letter: str) -> Dict[str, Any]:
-        """Apply to a job on Glassdoor."""
-        
-        try:
-            self.driver.get(job_url)
-            await asyncio.sleep(3)
-            
-            # Glassdoor often redirects to external sites or requires login
-            return {
-                "status": "requires_implementation",
-                "message": "Glassdoor application automation requires additional implementation"
-            }
-            
-        except Exception as e:
-            return {
-                "status": "error",
-                "message": f"Glassdoor application failed: {str(e)}"
-            }
-    
-    async def _apply_generic(self, job_url: str, resume_path: str, cover_letter: str) -> Dict[str, Any]:
-        """Apply to a job on an unknown/generic job site."""
-        
-        try:
-            self.driver.get(job_url)
-            await asyncio.sleep(3)
-            
-            # Look for common apply button patterns
-            apply_patterns = [
-                "apply",
-                "submit application",
-                "apply now",
-                "apply for this job",
-                "apply online"
-            ]
-            
-            apply_button = None
-            for pattern in apply_patterns:
-                try:
-                    # Try different element types and attributes
-                    selectors = [
-                        f"//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{pattern}')]",
-                        f"//a[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{pattern}')]",
-                        f"//input[contains(translate(@value, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{pattern}')]"
-                    ]
-                    
-                    for selector in selectors:
-                        try:
-                            apply_button = self.driver.find_element(By.XPATH, selector)
-                            if apply_button.is_displayed() and apply_button.is_enabled():
-                                break
-                        except NoSuchElementException:
-                            continue
-                    
-                    if apply_button:
-                        break
-                        
-                except Exception:
-                    continue
-            
-            if not apply_button:
-                return {
-                    "status": "no_apply_button",
-                    "message": "Could not find apply button on this site"
-                }
-            
-            # Click apply button and see what happens
-            apply_button.click()
-            await asyncio.sleep(3)
-            
-            return {
-                "status": "clicked_apply",
-                "message": "Clicked apply button - manual intervention may be required",
-                "current_url": self.driver.current_url
-            }
-            
-        except Exception as e:
-            return {
-                "status": "error",
-                "message": f"Generic application failed: {str(e)}"
-            }
-    
-    async def generate_cover_letter(self, job_description: str, job_title: str, 
-                                  company_name: str, resume_content: str) -> str:
-        """Generate a personalized cover letter using AI."""
-        
-        if not self.client:
-            return self._generate_basic_cover_letter(job_title, company_name)
-        
-        try:
-            prompt = f"""
-            Write a professional cover letter for the following job application:
-            
-            Job Title: {job_title}
-            Company: {company_name}
-            Job Description: {job_description[:1000]}
-            
-            Applicant Background: {resume_content[:800]}
-            
-            The cover letter should:
-            1. Be professional and concise (2-3 paragraphs)
-            2. Highlight relevant experience and skills
-            3. Show enthusiasm for the role and company
-            4. Be personalized to the specific job
-            5. Include a strong opening and closing
-            
-            Write only the cover letter content, no additional commentary.
-            """
-            
-            response = await self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a professional career coach writing compelling cover letters."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=400,
-                temperature=0.7
-            )
-            
-            return response.choices[0].message.content.strip()
-            
-        except Exception as e:
-            self.log_action("ERROR", f"AI cover letter generation failed: {str(e)}")
-            return self._generate_basic_cover_letter(job_title, company_name)
-    
-    def _generate_basic_cover_letter(self, job_title: str, company_name: str) -> str:
-        """Generate a basic cover letter template."""
-        
-        return f"""Dear Hiring Manager,
-
-I am writing to express my strong interest in the {job_title} position at {company_name}. With my technical background and passion for innovation, I am excited about the opportunity to contribute to your team.
-
-My experience in software development and problem-solving aligns well with the requirements of this role. I am particularly drawn to {company_name}'s reputation for excellence and would welcome the chance to bring my skills to your organization.
-
-Thank you for considering my application. I look forward to discussing how I can contribute to {company_name}'s continued success.
-
-Best regards,
-[Your Name]"""
-    
-    async def _init_linkedin_agent(self):
-        """Initialize LinkedIn agent for API-based applications."""
-        if not self.linkedin_agent:
-            self.linkedin_agent = LinkedInAgent()
-    
-    async def _close_linkedin_agent(self):
-        """Close LinkedIn agent and clean up resources."""
-        if self.linkedin_agent:
-            await self.linkedin_agent.close()
-            self.linkedin_agent = None
-    
-    def _should_use_linkedin_api(self, job_url: str) -> bool:
-        """Determine if we should use LinkedIn API for this job."""
-        # Check if we have LinkedIn API credentials
-        has_credentials = all([
-            Config.LINKEDIN_CLIENT_ID,
-            Config.LINKEDIN_CLIENT_SECRET,
-            Config.LINKEDIN_REFRESH_TOKEN
-        ])
-        
-        if not has_credentials:
-            return False
-        
-        # Extract job ID from LinkedIn URL
-        # LinkedIn job URLs typically look like: https://www.linkedin.com/jobs/view/1234567890
-        job_id_match = re.search(r'/jobs/view/(\d+)', job_url)
-        return job_id_match is not None
-    
-    async def _apply_linkedin_api(self, job_url: str, resume_path: str, cover_letter: str) -> Dict[str, Any]:
-        """Apply to a LinkedIn job using the API."""
-        
-        try:
-            # Extract job ID from URL
-            job_id_match = re.search(r'/jobs/view/(\d+)', job_url)
-            if not job_id_match:
-                return {
-                    "status": "error",
-                    "message": "Could not extract job ID from LinkedIn URL"
-                }
-            
-            job_id = job_id_match.group(1)
-            
-            # Generate cover letter if not provided
-            if not cover_letter:
-                cover_letter = await self._generate_linkedin_cover_letter(job_id)
-            
-            # Submit application via LinkedIn API
-            application_input = {
-                "operation": "apply",
-                "job_id": job_id,
-                "resume_path": resume_path,
-                "cover_letter": cover_letter
-            }
-            
-            result = await self.linkedin_agent.execute(application_input)
-            
-            if result.get("status") == "success":
-                self.log_action("LINKEDIN_API_SUCCESS", f"Application submitted via API for job {job_id}")
-                return result
-            elif result.get("status") == "not_supported":
-                self.log_action("LINKEDIN_API_FALLBACK", "Easy Apply not available, falling back to web automation")
-                # Fallback to web automation
-                return await self._apply_linkedin_web(job_url, resume_path, cover_letter)
-            else:
-                self.log_action("LINKEDIN_API_ERROR", f"API application failed: {result.get('message')}")
-                # Fallback to web automation
-                return await self._apply_linkedin_web(job_url, resume_path, cover_letter)
-                
-        except Exception as e:
-            self.log_action("LINKEDIN_API_ERROR", f"LinkedIn API application failed: {str(e)}")
-            # Fallback to web automation
-            return await self._apply_linkedin_web(job_url, resume_path, cover_letter)
-    
-    async def _generate_linkedin_cover_letter(self, job_id: str) -> str:
-        """Generate a cover letter for LinkedIn application using job details."""
-        
-        try:
-            # Get job details from LinkedIn API
-            job_details_input = {
-                "operation": "get_job_details",
-                "job_id": job_id
-            }
-            
-            job_result = await self.linkedin_agent.execute(job_details_input)
-            
-            if job_result.get("status") == "success":
-                job = job_result.get("job", {})
-                job_title = job.get("title", "this position")
-                company_name = job.get("company", "your company")
-                job_description = job.get("description", "")
-                
-                # Generate cover letter using AI
-                return await self.generate_cover_letter(
-                    job_description, job_title, company_name, ""
-                )
-            else:
-                return self._generate_basic_cover_letter("this position", "your company")
-                
-        except Exception as e:
-            self.log_action("COVER_LETTER_ERROR", f"Failed to generate LinkedIn cover letter: {str(e)}")
-            return self._generate_basic_cover_letter("this position", "your company")
-    
-    def get_application_stats(self) -> Dict[str, Any]:
-        """Get application statistics."""
+    async def get_application_status(self) -> Dict[str, Any]:
+        """Get status of recent applications."""
         
         return {
-            "applications_today": self.application_count,
+            "total_applications": self.application_count,
             "daily_limit": self.daily_limit,
-            "remaining_applications": max(0, self.daily_limit - self.application_count),
-            "limit_reached": self.application_count >= self.daily_limit
+            "remaining_today": max(0, self.daily_limit - self.application_count),
+            "application_history": self.application_history[-10:],  # Last 10 applications
+            "last_application": self.application_history[-1] if self.application_history else None
         }
+    
+    async def reset_daily_count(self):
+        """Reset daily application count (typically called at midnight)."""
+        
+        self.application_count = 0
+        self.log_action("INFO", "Daily application count reset")
+    
+    async def cleanup(self):
+        """Clean up resources."""
+        
+        await self._close_browser()
+        self.log_action("INFO", "Application agent cleaned up")
