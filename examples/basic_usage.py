@@ -33,30 +33,44 @@ async def example_1_complete_workflow():
         os.makedirs(os.path.dirname(resume_path), exist_ok=True)
         create_sample_resume(resume_path)
     
-    result = await orchestrator.execute({
-        "role": "Software Engineer",
-        "resume_path": resume_path,
-        "location": "remote",
-        "max_jobs": 5,  # Limit for demo
-        "auto_apply": False  # Safe mode - no actual applications
-    })
+    from agents.base_agent import AgentState
+    from datetime import datetime
     
-    if result.get("status") == "success":
-        summary = result.get("summary", {})
+    # Create proper AgentState object
+    initial_state = AgentState(
+        session_id="",
+        start_time="",
+        current_step="",
+        steps_completed=[],
+        status="",
+        error=None,
+        role="Software Engineer",
+        resume_path=resume_path,
+        location="remote",
+        max_jobs=5,  # Limit for demo
+        auto_apply=False,  # Safe mode - no actual applications
+        resume_analysis=None,
+        job_search_results=None,
+        processed_jobs=[],
+        final_report=None,
+        end_time=None,
+        workflow_duration=None
+    )
+    
+    result = await orchestrator.execute(initial_state)
+    
+    if result.status == "completed":
         print(f"✅ Workflow completed successfully!")
-        print(f"   Jobs found: {summary.get('jobs_found', 0)}")
-        print(f"   Jobs processed: {summary.get('jobs_processed', 0)}")
-        print(f"   Session ID: {result.get('session_id', 'Unknown')}")
+        print(f"   Session ID: {result.session_id}")
+        print(f"   Steps completed: {len(result.steps_completed)}")
         
         # Show some processed jobs
-        processed_jobs = result.get("processed_jobs", [])
-        if processed_jobs:
+        if result.processed_jobs:
             print(f"\n📋 Sample processed jobs:")
-            for i, job in enumerate(processed_jobs[:3], 1):
-                job_info = job.get("job_info", {})
-                print(f"   {i}. {job_info.get('title', 'Unknown')} at {job_info.get('company', 'Unknown')}")
+            for i, job in enumerate(result.processed_jobs[:3], 1):
+                print(f"   {i}. {job.get('title', 'Unknown')} at {job.get('company', 'Unknown')}")
     else:
-        print(f"❌ Workflow failed: {result.get('message', 'Unknown error')}")
+        print(f"❌ Workflow failed: {result.error or 'Unknown error'}")
 
 async def example_2_job_search_only():
     """Example 2: Job search without applications."""
@@ -65,25 +79,46 @@ async def example_2_job_search_only():
     print("EXAMPLE 2: Job Search Only")
     print("=" * 60)
     
+    from agents.base_agent import AgentState
     job_search_agent = JobSearchAgent()
     
-    result = await job_search_agent.execute({
-        "role": "Python Developer",
-        "location": "San Francisco",
-        "max_jobs": 10
-    })
+    # Create proper AgentState object for job search
+    job_search_state = AgentState(
+        session_id="",
+        start_time="",
+        current_step="",
+        steps_completed=[],
+        status="",
+        error=None,
+        role="Python Developer",
+        resume_path="./sample_resume.docx",
+        location="San Francisco",
+        max_jobs=10,
+        auto_apply=False,
+        resume_analysis=None,
+        job_search_results=None,
+        processed_jobs=[],
+        final_report=None,
+        end_time=None,
+        workflow_duration=None
+    )
     
-    if result.get("status") == "success":
-        jobs = result.get("jobs", [])
-        print(f"✅ Found {len(jobs)} jobs")
-        
-        for i, job in enumerate(jobs[:5], 1):  # Show first 5
-            print(f"   {i}. {job.get('title', 'Unknown')} at {job.get('company', 'Unknown')}")
-            print(f"      Location: {job.get('location', 'Unknown')}")
-            print(f"      Source: {job.get('source', 'Unknown')}")
-            print()
+    result = await job_search_agent.execute(job_search_state)
+    
+    if result.status == "completed":
+        if result.job_search_results and result.job_search_results.get("jobs"):
+            jobs = result.job_search_results["jobs"]
+            print(f"✅ Found {len(jobs)} jobs")
+            
+            for i, job in enumerate(jobs[:5], 1):  # Show first 5
+                print(f"   {i}. {job.get('title', 'Unknown')} at {job.get('company', 'Unknown')}")
+                print(f"      Location: {job.get('location', 'Unknown')}")
+                print(f"      Source: {job.get('source', 'Unknown')}")
+                print()
+        else:
+            print("✅ Job search completed but no jobs found")
     else:
-        print(f"❌ Job search failed: {result.get('message', 'Unknown error')}")
+        print(f"❌ Job search failed: {result.error or 'Unknown error'}")
 
 async def example_3_skills_analysis():
     """Example 3: Analyze skills from a job description."""
@@ -91,6 +126,8 @@ async def example_3_skills_analysis():
     print("=" * 60)
     print("EXAMPLE 3: Skills Analysis")
     print("=" * 60)
+    
+    from agents.base_agent import AgentState
     
     # Sample job description
     job_description = """
@@ -115,18 +152,46 @@ async def example_3_skills_analysis():
     
     skills_agent = SkillsAnalysisAgent()
     
-    result = await skills_agent.execute({
+    # Create proper AgentState object for skills analysis
+    skills_state = AgentState(
+        session_id="",
+        start_time="",
+        current_step="",
+        steps_completed=[],
+        status="",
+        error=None,
+        role="Senior Python Developer",
+        resume_path="./sample_resume.docx",
+        location="",
+        max_jobs=1,
+        auto_apply=False,
+        resume_analysis=None,
+        job_search_results=None,
+        processed_jobs=[],
+        final_report=None,
+        end_time=None,
+        workflow_duration=None
+    )
+    
+    # For skills analysis, we need to pass job description in a different way
+    # Let's modify the state to include job description
+    skills_state.job_search_results = {
         "job_description": job_description,
         "job_title": "Senior Python Developer"
-    })
+    }
     
-    if result.get("status") == "success":
-        required_skills = result.get("required_skills", [])
-        skill_categories = result.get("skill_categories", {})
-        
-        print(f"✅ Extracted {len(required_skills)} skills")
-        
-        print(f"\n🔍 Top skills found:")
+    result = await skills_agent.execute(skills_state)
+    
+    if result.status == "completed":
+        # Extract skills from the processed state
+        if result.processed_jobs and len(result.processed_jobs) > 0:
+            job_result = result.processed_jobs[0]
+            required_skills = job_result.get("required_skills", [])
+            skill_categories = job_result.get("skill_categories", {})
+            
+            print(f"✅ Extracted {len(required_skills)} skills")
+            
+            print(f"\n🔍 Top skills found:")
         for skill in required_skills[:10]:  # Top 10 skills
             skill_name = skill.get("skill", "Unknown")
             confidence = skill.get("confidence", 0)
@@ -137,7 +202,7 @@ async def example_3_skills_analysis():
             if skills:
                 print(f"   {category.title()}: {len(skills)} skills")
     else:
-        print(f"❌ Skills analysis failed: {result.get('message', 'Unknown error')}")
+        print(f"❌ Skills analysis failed: {result.error or 'Unknown error'}")
 
 async def example_4_resume_analysis():
     """Example 4: Analyze an existing resume."""

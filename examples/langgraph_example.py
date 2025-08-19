@@ -31,14 +31,14 @@ async def demonstrate_workflow_creation():
     print(f"📊 Workflow created successfully!")
     print(f"   • Type: {type(workflow).__name__}")
     print(f"   • Nodes: {len(workflow.nodes)}")
-    print(f"   • Entry point: {workflow.entry_point}")
+    print(f"   • Entry point: analyze_resume")
     
     print("\n🔄 Workflow Nodes:")
     for node_name in workflow.nodes:
         print(f"   • {node_name}")
     
     print("\n🔄 Workflow Flow:")
-    print("   1. resume_analysis → 2. job_search → 3. process_jobs → 4. generate_report")
+    print("   1. analyze_resume → 2. search_jobs → 3. process_jobs → 4. generate_report")
     
     return workflow
 
@@ -140,9 +140,9 @@ async def demonstrate_error_handling():
     
     print("🔍 Testing validation with invalid state...")
     
-    # Test validation
-    from agents.base_agent import BaseAgent
-    test_agent = BaseAgent("TestAgent")
+    # Test validation using the orchestrator agent
+    from agents.orchestrator_agent import OrchestratorAgent
+    test_agent = OrchestratorAgent()
     
     is_valid = test_agent.validate_input(invalid_state, ["role", "resume_path"])
     print(f"   • Validation result: {'❌ Invalid' if not is_valid else '✅ Valid'}")

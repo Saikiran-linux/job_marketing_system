@@ -37,15 +37,15 @@ class OrchestratorAgent(BaseAgent):
         workflow = StateGraph(AgentState)
         
         # Add nodes for each step
-        workflow.add_node("resume_analysis", self.resume_analysis_agent.create_node())
-        workflow.add_node("job_search", self.job_search_agent.create_node())
+        workflow.add_node("analyze_resume", self.resume_analysis_agent.create_node())
+        workflow.add_node("search_jobs", self.job_search_agent.create_node())
         workflow.add_node("process_jobs", self._create_job_processing_node())
         workflow.add_node("generate_report", self._create_report_generation_node())
         
         # Define the workflow flow
-        workflow.set_entry_point("resume_analysis")
-        workflow.add_edge("resume_analysis", "job_search")
-        workflow.add_edge("job_search", "process_jobs")
+        workflow.set_entry_point("analyze_resume")
+        workflow.add_edge("analyze_resume", "search_jobs")
+        workflow.add_edge("search_jobs", "process_jobs")
         workflow.add_edge("process_jobs", "generate_report")
         workflow.add_edge("generate_report", END)
         

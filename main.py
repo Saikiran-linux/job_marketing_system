@@ -179,7 +179,7 @@ def show_usage():
     print("Usage:")
     print("  python main.py                    # Run the full workflow")
     print("  python main.py --example          # Run example workflow")
-    print("  python main.py --help             # Show this help")
+    print("  python main.py --usage            # Show this help")
     print("\nEnvironment Variables:")
     print("  OPENAI_API_KEY                    # OpenAI API key for AI features")
     print("  LINKEDIN_CLIENT_ID                # LinkedIn API client ID")
@@ -191,11 +191,11 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description="LangGraph-based Job Application System")
     parser.add_argument("--example", action="store_true", help="Run example workflow")
-    parser.add_argument("--help", action="store_true", help="Show usage information")
+    parser.add_argument("--usage", action="store_true", help="Show usage information")
     
     args = parser.parse_args()
     
-    if args.help:
+    if args.usage:
         show_usage()
         sys.exit(0)
     
