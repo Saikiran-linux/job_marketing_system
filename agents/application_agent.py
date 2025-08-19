@@ -14,8 +14,10 @@ from selenium.webdriver.chrome.service import Service
 from datetime import datetime
 import openai
 from openai import AsyncOpenAI
-from agents.base_agent import BaseAgent
+from agents.base_agent import BaseAgent, AgentState
+from agents.linkedin_agent import LinkedInAgent
 from config import Config
+import re
 
 class ApplicationAgent(BaseAgent):
     """Agent responsible for automatically applying to jobs."""
@@ -24,71 +26,28 @@ class ApplicationAgent(BaseAgent):
         super().__init__("ApplicationAgent")
         self.driver = None
         self.client = AsyncOpenAI(api_key=Config.OPENAI_API_KEY) if Config.OPENAI_API_KEY else None
+        self.linkedin_agent = None
         self.application_count = 0
         self.daily_limit = Config.MAX_DAILY_APPLICATIONS
     
-    async def execute(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, state: AgentState) -> AgentState:
         """Apply to a job with the provided information."""
         
-        # Validate required inputs
-        required_fields = ["job_url", "resume_path"]
-        if not self.validate_input(input_data, required_fields):
-            return {"status": "error", "message": "Missing required fields"}
+        # For application, we need to get the job-specific data from the context
+        # This agent is typically called during job processing, not from the main workflow state
+        # We'll create a temporary state or use the existing state if it has job information
         
-        job_url = input_data.get("job_url")
-        resume_path = input_data.get("resume_path")
-        cover_letter = input_data.get("cover_letter", "")
-        job_title = input_data.get("job_title", "")
-        company_name = input_data.get("company_name", "")
+        # Since this agent is called during job processing, we need to handle the case
+        # where we don't have direct access to job description in the main state
+        # For now, we'll return the state as-is and handle the actual application in the calling context
         
-        # Check daily application limit
-        if self.application_count >= self.daily_limit:
-            return {
-                "status": "skipped",
-                "message": f"Daily application limit ({self.daily_limit}) reached"
-            }
+        self.log_action("INFO", "Application agent called - job-specific application handled in calling context")
         
-        self.log_action("APPLYING", f"{job_title} at {company_name}")
+        # Update state to indicate application step
+        state.steps_completed.append("application")
+        state.current_step = "application_complete"
         
-        try:
-            # Initialize browser
-            await self._init_browser()
-            
-            # Determine job site and apply accordingly
-            application_result = await self._apply_to_job(
-                job_url, resume_path, cover_letter, job_title, company_name
-            )
-            
-            # Close browser
-            await self._close_browser()
-            
-            if application_result.get("status") == "success":
-                self.application_count += 1
-                self.log_action("SUCCESS", f"Application submitted successfully")
-            
-            # Add application tracking info
-            application_result.update({
-                "job_url": job_url,
-                "job_title": job_title,
-                "company_name": company_name,
-                "application_timestamp": datetime.now().isoformat(),
-                "resume_used": resume_path,
-                "daily_count": self.application_count
-            })
-            
-            return application_result
-            
-        except Exception as e:
-            self.log_action("ERROR", f"Application failed: {str(e)}")
-            await self._close_browser()
-            
-            return {
-                "status": "error",
-                "message": f"Application failed: {str(e)}",
-                "job_url": job_url,
-                "job_title": job_title,
-                "company_name": company_name
-            }
+        return state
     
     async def _init_browser(self):
         """Initialize Selenium WebDriver."""
@@ -503,6 +462,108 @@ Thank you for considering my application. I look forward to discussing how I can
 
 Best regards,
 [Your Name]"""
+    
+    async def _init_linkedin_agent(self):
+        """Initialize LinkedIn agent for API-based applications."""
+        if not self.linkedin_agent:
+            self.linkedin_agent = LinkedInAgent()
+    
+    async def _close_linkedin_agent(self):
+        """Close LinkedIn agent and clean up resources."""
+        if self.linkedin_agent:
+            await self.linkedin_agent.close()
+            self.linkedin_agent = None
+    
+    def _should_use_linkedin_api(self, job_url: str) -> bool:
+        """Determine if we should use LinkedIn API for this job."""
+        # Check if we have LinkedIn API credentials
+        has_credentials = all([
+            Config.LINKEDIN_CLIENT_ID,
+            Config.LINKEDIN_CLIENT_SECRET,
+            Config.LINKEDIN_REFRESH_TOKEN
+        ])
+        
+        if not has_credentials:
+            return False
+        
+        # Extract job ID from LinkedIn URL
+        # LinkedIn job URLs typically look like: https://www.linkedin.com/jobs/view/1234567890
+        job_id_match = re.search(r'/jobs/view/(\d+)', job_url)
+        return job_id_match is not None
+    
+    async def _apply_linkedin_api(self, job_url: str, resume_path: str, cover_letter: str) -> Dict[str, Any]:
+        """Apply to a LinkedIn job using the API."""
+        
+        try:
+            # Extract job ID from URL
+            job_id_match = re.search(r'/jobs/view/(\d+)', job_url)
+            if not job_id_match:
+                return {
+                    "status": "error",
+                    "message": "Could not extract job ID from LinkedIn URL"
+                }
+            
+            job_id = job_id_match.group(1)
+            
+            # Generate cover letter if not provided
+            if not cover_letter:
+                cover_letter = await self._generate_linkedin_cover_letter(job_id)
+            
+            # Submit application via LinkedIn API
+            application_input = {
+                "operation": "apply",
+                "job_id": job_id,
+                "resume_path": resume_path,
+                "cover_letter": cover_letter
+            }
+            
+            result = await self.linkedin_agent.execute(application_input)
+            
+            if result.get("status") == "success":
+                self.log_action("LINKEDIN_API_SUCCESS", f"Application submitted via API for job {job_id}")
+                return result
+            elif result.get("status") == "not_supported":
+                self.log_action("LINKEDIN_API_FALLBACK", "Easy Apply not available, falling back to web automation")
+                # Fallback to web automation
+                return await self._apply_linkedin_web(job_url, resume_path, cover_letter)
+            else:
+                self.log_action("LINKEDIN_API_ERROR", f"API application failed: {result.get('message')}")
+                # Fallback to web automation
+                return await self._apply_linkedin_web(job_url, resume_path, cover_letter)
+                
+        except Exception as e:
+            self.log_action("LINKEDIN_API_ERROR", f"LinkedIn API application failed: {str(e)}")
+            # Fallback to web automation
+            return await self._apply_linkedin_web(job_url, resume_path, cover_letter)
+    
+    async def _generate_linkedin_cover_letter(self, job_id: str) -> str:
+        """Generate a cover letter for LinkedIn application using job details."""
+        
+        try:
+            # Get job details from LinkedIn API
+            job_details_input = {
+                "operation": "get_job_details",
+                "job_id": job_id
+            }
+            
+            job_result = await self.linkedin_agent.execute(job_details_input)
+            
+            if job_result.get("status") == "success":
+                job = job_result.get("job", {})
+                job_title = job.get("title", "this position")
+                company_name = job.get("company", "your company")
+                job_description = job.get("description", "")
+                
+                # Generate cover letter using AI
+                return await self.generate_cover_letter(
+                    job_description, job_title, company_name, ""
+                )
+            else:
+                return self._generate_basic_cover_letter("this position", "your company")
+                
+        except Exception as e:
+            self.log_action("COVER_LETTER_ERROR", f"Failed to generate LinkedIn cover letter: {str(e)}")
+            return self._generate_basic_cover_letter("this position", "your company")
     
     def get_application_stats(self) -> Dict[str, Any]:
         """Get application statistics."""

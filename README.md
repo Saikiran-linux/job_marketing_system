@@ -1,39 +1,38 @@
-# Job Marketing System
+# LangGraph-based Job Application System
 
-An intelligent, automated job search and application system that uses multiple AI agents to find jobs, analyze requirements, optimize resumes, and submit applications.
+A sophisticated multi-agent system for automated job searching and application, built with **LangGraph** for robust workflow orchestration.
 
-## 🚀 Features
+## 🚀 What's New in LangGraph Version
 
-- **Intelligent Job Search**: Automatically searches multiple job boards (Indeed, LinkedIn, Glassdoor)
-- **Skills Analysis**: Uses AI to extract and analyze required skills from job descriptions
-- **Resume Optimization**: Automatically modifies resumes to match job requirements
-- **Automated Applications**: Submits job applications with optimized resumes and cover letters
-- **Comprehensive Reporting**: Generates detailed analytics and recommendations
-- **Multi-Agent Architecture**: Modular design with specialized agents for different tasks
+This system has been completely rewritten to use **LangGraph** instead of LangChain, providing:
 
-## 🏗️ Architecture
+- **Declarative Workflow Definition**: Clear, visual workflow graphs
+- **Built-in State Management**: Automatic state flow between agents
+- **Better Error Handling**: Robust error recovery and state persistence
+- **Scalable Architecture**: Easy to add new agents and workflow steps
+- **Modern Async Support**: Full async/await support throughout
 
-The system consists of six specialized agents:
+## 🏗️ Architecture Overview
 
-1. **Job Search Agent** - Finds relevant job postings from multiple sources
-2. **Skills Analysis Agent** - Extracts required skills using AI and pattern matching
-3. **Resume Analysis Agent** - Analyzes current resume content and structure
-4. **Resume Modification Agent** - Optimizes resumes for specific job requirements
-5. **Application Agent** - Automates the job application process
-6. **Orchestrator Agent** - Coordinates all agents in a complete workflow
+The system uses LangGraph's workflow approach with the following structure:
 
-## 📋 Prerequisites
+```
+resume_analysis → job_search → process_jobs → generate_report
+```
 
-- Python 3.8 or higher
-- Chrome browser (for web automation)
-- OpenAI API key (for AI-powered features)
+### Core Components
+
+- **OrchestratorAgent**: Main workflow coordinator using LangGraph
+- **AgentState**: Centralized state object that flows through the workflow
+- **Specialized Agents**: Each handling specific tasks (resume analysis, job search, etc.)
+- **Workflow Graph**: Declarative definition of the entire process
 
 ## 🛠️ Installation
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/Saikiran-linux/job_marketing_system.git
-   cd job_marketing_system
+   git clone <repository-url>
+   cd marketin_jobs_
    ```
 
 2. **Install dependencies**:
@@ -41,308 +40,302 @@ The system consists of six specialized agents:
    pip install -r requirements.txt
    ```
 
-3. **Set up configuration**:
+3. **Set up environment variables**:
    ```bash
-   cp .env.example .env
-   # Edit .env with your API keys and settings
+   cp env_template.txt .env
+   # Edit .env with your API keys
    ```
 
-4. **Download required NLTK data** (automatic on first run):
-   ```python
-   import nltk
-   nltk.download('punkt')
-   nltk.download('stopwords')
-   ```
+## 🔑 Environment Variables
 
-## ⚙️ Configuration
+```bash
+# OpenAI API for AI-powered features
+OPENAI_API_KEY=your_openai_api_key
 
-Create a `.env` file with the following settings:
-
-```env
-# Required
-OPENAI_API_KEY=your_openai_api_key_here
-
-# Optional Job Board Credentials
-LINKEDIN_EMAIL=your_linkedin_email@example.com
-LINKEDIN_PASSWORD=your_linkedin_password
-INDEED_EMAIL=your_indeed_email@example.com
-INDEED_PASSWORD=your_indeed_password
-
-# Application Settings
-MAX_JOBS_PER_SOURCE=50
-APPLICATION_DELAY=5
-MAX_DAILY_APPLICATIONS=20
-SKILL_MATCH_THRESHOLD=0.7
+# LinkedIn API (optional)
+LINKEDIN_CLIENT_ID=your_linkedin_client_id
+LINKEDIN_CLIENT_SECRET=your_linkedin_client_secret
+LINKEDIN_ACCESS_TOKEN=your_linkedin_access_token
 ```
 
 ## 🚀 Quick Start
 
-### Basic Usage
+### Run the Full Workflow
 
 ```bash
-# Search and analyze jobs (no applications)
-python main.py --role "Software Engineer" --resume "./my_resume.docx"
-
-# Search with specific location
-python main.py --role "Data Scientist" --location "San Francisco" --resume "./resume.docx"
-
-# Auto-apply to jobs (use with caution!)
-python main.py --role "Python Developer" --resume "./resume.docx" --auto-apply
-
-# Dry run (test without applying)
-python main.py --role "DevOps Engineer" --resume "./resume.docx" --dry-run
+python main.py
 ```
 
-### Advanced Usage
+### Run Example Workflow
 
 ```bash
-# Limit job search
-python main.py --role "ML Engineer" --resume "./resume.docx" --max-jobs 10
-
-# Check configuration
-python main.py --config-check
-
-# Resume previous session
-python main.py --session-id "session_20240101_120000"
+python main.py --example
 ```
 
-## 📁 File Structure
+### Run LangGraph Demo
 
-```
-job_marketing_system/
-├── agents/                     # AI agents
-│   ├── base_agent.py          # Base agent class
-│   ├── job_search_agent.py    # Job searching
-│   ├── skills_analysis_agent.py # Skills extraction
-│   ├── resume_analysis_agent.py # Resume analysis
-│   ├── resume_modification_agent.py # Resume optimization
-│   ├── application_agent.py   # Job applications
-│   └── orchestrator_agent.py  # Workflow coordination
-├── utils/                      # Utilities
-│   ├── logger.py              # Logging setup
-│   ├── database.py            # Data persistence
-│   └── report_generator.py    # Analytics
-├── data/                       # Resume templates
-├── output/                     # Generated resumes
-├── logs/                       # Application logs
-├── config.py                   # Configuration
-├── main.py                     # Main entry point
-└── requirements.txt            # Dependencies
+```bash
+python examples/langgraph_example.py
 ```
 
-## 🔧 API Usage
+## 📋 Usage Examples
 
-### Programmatic Usage
+### Basic Workflow Execution
 
 ```python
-import asyncio
 from agents.orchestrator_agent import OrchestratorAgent
+from agents.base_agent import AgentState
 
-async def search_and_apply():
-    orchestrator = OrchestratorAgent()
-    
-    result = await orchestrator.execute({
-        "role": "Software Engineer",
-        "resume_path": "./resume.docx",
-        "location": "remote",
-        "max_jobs": 20,
-        "auto_apply": False  # Set to True for actual applications
-    })
-    
-    print(f"Found {result['summary']['jobs_found']} jobs")
-    return result
+# Create initial state
+state = AgentState(
+    role="Software Engineer",
+    resume_path="./resume.docx",
+    location="San Francisco, CA",
+    max_jobs=5,
+    auto_apply=False
+)
 
-# Run the workflow
-result = asyncio.run(search_and_apply())
+# Execute workflow
+orchestrator = OrchestratorAgent()
+final_state = await orchestrator.execute(state)
+
+# Check results
+if final_state.status == "completed":
+    print(f"Jobs processed: {len(final_state.processed_jobs)}")
+    print(f"Success rate: {final_state.final_report['summary']['success_rate']}%")
 ```
 
-### Individual Agent Usage
+### Custom Workflow Creation
 
 ```python
-from agents.skills_analysis_agent import SkillsAnalysisAgent
+from langgraph.graph import StateGraph, END
+from agents.base_agent import AgentState
 
-# Analyze job skills
-skills_agent = SkillsAnalysisAgent()
-result = await skills_agent.execute({
-    "job_description": "We need a Python developer with Django experience..."
-})
+# Create custom workflow
+workflow = StateGraph(AgentState)
 
-print(result["required_skills"])
+# Add nodes
+workflow.add_node("custom_step", custom_agent.create_node())
+workflow.add_node("another_step", another_agent.create_node())
+
+# Define flow
+workflow.set_entry_point("custom_step")
+workflow.add_edge("custom_step", "another_step")
+workflow.add_edge("another_step", END)
+
+# Compile and use
+compiled_workflow = workflow.compile()
+result = await compiled_workflow.ainvoke(initial_state)
 ```
 
-## 📊 Reports and Analytics
+## 🤖 Agent System
 
-The system generates comprehensive reports:
+### Base Agent
 
-### Session Reports
-- Application success rates
-- Skill gap analysis
-- Company targeting insights
-- Timeline analytics
+All agents inherit from `BaseAgent` and implement:
+- `execute(state: AgentState) -> AgentState`: Main execution logic
+- `create_node() -> callable`: LangGraph node creation
+- Built-in error handling and retries
 
-### Weekly Reports
-- Performance trends
-- Market insights
-- Skill demand analysis
+### Specialized Agents
 
-### Skill Gap Reports
-- Missing skills identification
-- Learning recommendations
-- Market demand trends
+- **ResumeAnalysisAgent**: Analyzes resumes and extracts skills
+- **JobSearchAgent**: Searches multiple job sources
+- **SkillsAnalysisAgent**: Analyzes job requirements
+- **ResumeModificationAgent**: Tailors resumes for specific jobs
+- **ApplicationAgent**: Automates job applications
+- **LinkedInAgent**: LinkedIn-specific operations
 
-### Accessing Reports
+## 🔄 Workflow States
+
+The `AgentState` object flows through the entire workflow:
 
 ```python
-from utils.report_generator import ReportGenerator
-
-# Generate session report
-reporter = ReportGenerator()
-report = reporter.generate_session_report("session_20240101_120000")
-
-# Generate visual charts
-chart_file = reporter.create_visual_report("session_20240101_120000")
+class AgentState(BaseModel):
+    # Core workflow info
+    session_id: str
+    start_time: str
+    current_step: str
+    steps_completed: list
+    status: str
+    error: Optional[str]
+    
+    # Input parameters
+    role: str
+    resume_path: str
+    location: str
+    max_jobs: int
+    auto_apply: bool
+    
+    # Results from each step
+    resume_analysis: Optional[Dict]
+    job_search_results: Optional[Dict]
+    processed_jobs: list
+    final_report: Optional[Dict]
+    
+    # Metadata
+    end_time: Optional[str]
+    workflow_duration: Optional[str]
 ```
 
-## 🔒 Safety and Ethics
+## 📊 Monitoring and Debugging
 
-### Important Considerations
+### Workflow Status
 
-1. **Rate Limiting**: Built-in delays prevent overwhelming job sites
-2. **Simulation Mode**: Test applications without actually submitting
-3. **Authentication**: Most job sites require manual login setup
-4. **Terms of Service**: Ensure compliance with job board policies
-5. **Data Privacy**: All data stored locally by default
+```python
+# Get workflow status by session ID
+status = await orchestrator.get_workflow_status("session_123")
+print(f"Status: {status['workflow_state']['status']}")
+```
 
-### Best Practices
+### Agent Statistics
 
-- Start with `--dry-run` to test the system
-- Use reasonable daily application limits
-- Review generated resumes before submission
-- Respect job board rate limits and terms of service
-- Keep your API keys secure
+```python
+# Get statistics from all agents
+stats = orchestrator.get_agent_stats()
+for agent_name, agent_stats in stats.items():
+    print(f"{agent_name}: {agent_stats['execution_count']} executions")
+```
 
-## 🐛 Troubleshooting
+### Workflow Graph Inspection
 
-### Common Issues
+```python
+# Inspect the workflow structure
+workflow = orchestrator.get_workflow_graph()
+print(f"Nodes: {workflow.nodes}")
+print(f"Entry point: {workflow.entry_point}")
+```
 
-1. **OpenAI API Errors**:
-   ```bash
-   # Check API key
-   python main.py --config-check
-   ```
+## 🔧 Configuration
 
-2. **Browser Issues**:
-   ```bash
-   # Update Chrome driver
-   pip install --upgrade selenium webdriver-manager
-   ```
+Edit `config.py` to customize:
 
-3. **Resume Parsing Errors**:
-   - Ensure resume is in .docx format
-   - Check file permissions
-   - Verify file path is correct
+- Job search limits
+- Application delays
+- File paths
+- API endpoints
+- Default locations
 
-4. **Job Site Blocking**:
-   - Increase delays between requests
-   - Use different user agents
-   - Implement proxy rotation
+## 📁 Project Structure
 
-### Debug Mode
+```
+marketin_jobs_/
+├── agents/                    # Agent implementations
+│   ├── base_agent.py         # Base agent class
+│   ├── orchestrator_agent.py # Main workflow coordinator
+│   ├── job_search_agent.py   # Job search functionality
+│   ├── resume_analysis_agent.py # Resume analysis
+│   ├── skills_analysis_agent.py # Skills extraction
+│   ├── resume_modification_agent.py # Resume tailoring
+│   ├── application_agent.py  # Job application
+│   └── linkedin_agent.py     # LinkedIn integration
+├── examples/                  # Usage examples
+│   ├── langgraph_example.py  # LangGraph demo
+│   └── ...                   # Other examples
+├── utils/                     # Utility functions
+├── main.py                    # Main entry point
+├── requirements.txt           # Dependencies
+└── README.md                 # This file
+```
+
+## 🚀 Advanced Features
+
+### Custom Workflow Nodes
+
+```python
+def custom_node(state: AgentState) -> AgentState:
+    """Custom workflow node."""
+    # Your custom logic here
+    state.steps_completed.append("custom_step")
+    return state
+
+# Add to workflow
+workflow.add_node("custom", custom_node)
+```
+
+### Conditional Workflows
+
+```python
+def should_continue(state: AgentState) -> str:
+    """Conditional routing based on state."""
+    if state.error:
+        return "error_handler"
+    elif state.current_step == "completed":
+        return END
+    else:
+        return "next_step"
+
+# Add conditional edges
+workflow.add_conditional_edges("current_step", should_continue)
+```
+
+### State Persistence
+
+```python
+# Save workflow state
+await orchestrator._save_workflow_state(final_state)
+
+# Load workflow state
+status = await orchestrator.get_workflow_status(session_id)
+```
+
+## 🧪 Testing
+
+### Run Tests
 
 ```bash
-# Enable verbose logging
-python main.py --role "Developer" --resume "./resume.docx" --verbose
+# Run all tests
+python -m pytest
+
+# Run specific test file
+python -m pytest tests/test_orchestrator.py
+
+# Run with coverage
+python -m pytest --cov=agents
 ```
 
-## 🔮 Advanced Features
-
-### Custom Job Sources
-
-Add new job sites by extending the `JobSearchAgent`:
+### Example Test
 
 ```python
-class CustomJobSearchAgent(JobSearchAgent):
-    async def _search_custom_site(self, role, location, max_jobs):
-        # Implement custom job site search
-        pass
-```
+import pytest
+from agents.orchestrator_agent import OrchestratorAgent
+from agents.base_agent import AgentState
 
-### Resume Templates
-
-Create custom resume templates in the `data/` directory:
-
-```python
-# Custom resume formatting
-from docx import Document
-
-def create_custom_resume(content):
-    doc = Document("./data/custom_template.docx")
-    # Customize resume format
-    return doc
-```
-
-### Skill Databases
-
-Extend skill recognition with custom databases:
-
-```python
-# Add industry-specific skills
-custom_skills = {
-    "fintech": ["blockchain", "cryptocurrency", "trading systems"],
-    "healthcare": ["HIPAA", "HL7", "medical imaging"]
-}
+@pytest.mark.asyncio
+async def test_workflow_execution():
+    orchestrator = OrchestratorAgent()
+    state = AgentState(role="Test", resume_path="./test.docx")
+    
+    result = await orchestrator.execute(state)
+    assert result.status in ["completed", "error"]
 ```
 
 ## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
-3. Add tests for new functionality
-4. Submit a pull request
-
-### Development Setup
-
-```bash
-# Install development dependencies
-pip install -r requirements-dev.txt
-
-# Run tests
-pytest tests/
-
-# Run linting
-flake8 agents/ utils/
-```
+3. Make your changes
+4. Add tests
+5. Submit a pull request
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-## ⚠️ Disclaimer
+## 🙏 Acknowledgments
 
-This tool is for educational and personal use. Users are responsible for:
-- Complying with job board terms of service
-- Ensuring accuracy of application materials
-- Respecting rate limits and anti-bot measures
-- Following applicable laws and regulations
+- **LangGraph** team for the excellent workflow framework
+- **OpenAI** for AI capabilities
+- **LinkedIn** for job search APIs
+- **Community contributors** for feedback and improvements
 
-Use responsibly and ethically. The authors are not responsible for any misuse or consequences.
+## 📞 Support
 
-## 🆘 Support
-
-- **Documentation**: Check this README and code comments
-- **Issues**: Report bugs via GitHub issues
-- **Discussions**: Use GitHub discussions for questions
-
-## 🗺️ Roadmap
-
-- [ ] LinkedIn API integration
-- [ ] PDF resume support
-- [ ] Machine learning skill matching
-- [ ] Email notification system
-- [ ] Web dashboard interface
-- [ ] Integration with job tracking systems
-- [ ] Advanced analytics and ML insights
+For questions and support:
+- Open an issue on GitHub
+- Check the examples directory
+- Review the agent documentation
 
 ---
 
-Built with ❤️ for job seekers everywhere. Good luck with your job search!
+**Happy job hunting with LangGraph! 🚀**

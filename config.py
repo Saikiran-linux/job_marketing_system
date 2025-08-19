@@ -10,6 +10,12 @@ class Config:
     # API Keys
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     
+    # LinkedIn API Configuration
+    LINKEDIN_CLIENT_ID: str = os.getenv("LINKEDIN_CLIENT_ID", "")
+    LINKEDIN_CLIENT_SECRET: str = os.getenv("LINKEDIN_CLIENT_SECRET", "")
+    LINKEDIN_REFRESH_TOKEN: str = os.getenv("LINKEDIN_REFRESH_TOKEN", "")
+    LINKEDIN_ACCESS_TOKEN: str = os.getenv("LINKEDIN_ACCESS_TOKEN", "")
+    
     # Job Board Credentials
     LINKEDIN_EMAIL: str = os.getenv("LINKEDIN_EMAIL", "")
     LINKEDIN_PASSWORD: str = os.getenv("LINKEDIN_PASSWORD", "")
@@ -24,6 +30,11 @@ class Config:
     APPLICATION_DELAY: int = int(os.getenv("APPLICATION_DELAY", "5"))
     MAX_DAILY_APPLICATIONS: int = int(os.getenv("MAX_DAILY_APPLICATIONS", "20"))
     SKILL_MATCH_THRESHOLD: float = float(os.getenv("SKILL_MATCH_THRESHOLD", "0.7"))
+    
+    # LinkedIn API Settings
+    LINKEDIN_API_TIMEOUT: int = int(os.getenv("LINKEDIN_API_TIMEOUT", "30"))
+    LINKEDIN_MAX_RETRIES: int = int(os.getenv("LINKEDIN_MAX_RETRIES", "3"))
+    LINKEDIN_RATE_LIMIT_DELAY: float = float(os.getenv("LINKEDIN_RATE_LIMIT_DELAY", "1.0"))
     
     # File Paths
     RESUME_TEMPLATE_PATH: str = os.getenv("RESUME_TEMPLATE_PATH", "./data/resume_template.docx")
@@ -44,6 +55,19 @@ class Config:
         required_fields = [
             "OPENAI_API_KEY"
         ]
+        
+        # Check LinkedIn API configuration
+        linkedin_fields = [
+            "LINKEDIN_CLIENT_ID",
+            "LINKEDIN_CLIENT_SECRET", 
+            "LINKEDIN_REFRESH_TOKEN"
+        ]
+        
+        linkedin_configured = all(getattr(cls, field) for field in linkedin_fields)
+        
+        if not linkedin_configured:
+            print("Warning: LinkedIn API credentials not fully configured")
+            print("LinkedIn integration will be limited without proper API access")
         
         for field in required_fields:
             if not getattr(cls, field):

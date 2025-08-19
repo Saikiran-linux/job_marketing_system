@@ -5,20 +5,38 @@
 # REQUIRED CONFIGURATION
 # =============================================================================
 
-# OpenAI API Configuration (REQUIRED for AI features)
+# OpenAI API Configuration
 OPENAI_API_KEY=your_openai_api_key_here
+
+# LinkedIn API Configuration
+# Get these from https://www.linkedin.com/developers/
+LINKEDIN_CLIENT_ID=your_linkedin_client_id_here
+LINKEDIN_CLIENT_SECRET=your_linkedin_client_secret_here
+LINKEDIN_REFRESH_TOKEN=your_linkedin_refresh_token_here
+LINKEDIN_ACCESS_TOKEN=your_linkedin_access_token_here
+
+# LinkedIn API Settings
+LINKEDIN_API_TIMEOUT=30
+LINKEDIN_MAX_RETRIES=3
+LINKEDIN_RATE_LIMIT_DELAY=1.0
+
+# Job Board Credentials (Optional - for web scraping fallback)
+LINKEDIN_EMAIL=your_linkedin_email@example.com
+LINKEDIN_PASSWORD=your_linkedin_password_here
+INDEED_EMAIL=your_indeed_email@example.com
+INDEED_PASSWORD=your_indeed_password_here
 
 # =============================================================================
 # OPTIONAL JOB BOARD CREDENTIALS
 # =============================================================================
 
 # LinkedIn Credentials (for LinkedIn job applications)
-LINKEDIN_EMAIL=your_linkedin_email@example.com
-LINKEDIN_PASSWORD=your_linkedin_password
+# LINKEDIN_EMAIL=your_linkedin_email@example.com
+# LINKEDIN_PASSWORD=your_linkedin_password
 
 # Indeed Credentials (for enhanced Indeed access)
-INDEED_EMAIL=your_indeed_email@example.com
-INDEED_PASSWORD=your_indeed_password
+# INDEED_EMAIL=your_indeed_email@example.com
+# INDEED_PASSWORD=your_indeed_password
 
 # =============================================================================
 # APPLICATION SETTINGS
@@ -27,11 +45,16 @@ INDEED_PASSWORD=your_indeed_password
 # Job Search Settings
 MAX_JOBS_PER_SOURCE=50
 DEFAULT_LOCATION=remote
+DEFAULT_JOB_TYPES=full-time,contract,remote
 
 # Application Behavior
 APPLICATION_DELAY=5
 MAX_DAILY_APPLICATIONS=300
 SKILL_MATCH_THRESHOLD=0.7
+
+# Resume Settings
+MAX_RESUME_PAGES=2
+MIN_SKILL_MENTIONS=3
 
 # =============================================================================
 # FILE PATHS

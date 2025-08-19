@@ -1,9 +1,12 @@
 import asyncio
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Annotated
 from datetime import datetime
 import json
 import os
-from agents.base_agent import BaseAgent
+from langgraph.graph import StateGraph, END
+from langgraph.prebuilt import ToolNode
+from pydantic import BaseModel, Field
+from agents.base_agent import BaseAgent, AgentState
 from agents.job_search_agent import JobSearchAgent
 from agents.skills_analysis_agent import SkillsAnalysisAgent
 from agents.resume_analysis_agent import ResumeAnalysisAgent
@@ -12,7 +15,7 @@ from agents.application_agent import ApplicationAgent
 from config import Config
 
 class OrchestratorAgent(BaseAgent):
-    """Main orchestrator agent that coordinates all other agents."""
+    """Main orchestrator agent that coordinates all other agents using LangGraph."""
     
     def __init__(self):
         super().__init__("OrchestratorAgent")
@@ -24,76 +27,87 @@ class OrchestratorAgent(BaseAgent):
         self.resume_modification_agent = ResumeModificationAgent()
         self.application_agent = ApplicationAgent()
         
-        # Workflow state
-        self.workflow_state = {}
-        self.session_id = None
+        # Create the LangGraph workflow
+        self.workflow = self._create_workflow()
+        
+    def _create_workflow(self) -> StateGraph:
+        """Create the LangGraph workflow with all nodes and edges."""
+        
+        # Create the workflow graph
+        workflow = StateGraph(AgentState)
+        
+        # Add nodes for each step
+        workflow.add_node("resume_analysis", self.resume_analysis_agent.create_node())
+        workflow.add_node("job_search", self.job_search_agent.create_node())
+        workflow.add_node("process_jobs", self._create_job_processing_node())
+        workflow.add_node("generate_report", self._create_report_generation_node())
+        
+        # Define the workflow flow
+        workflow.set_entry_point("resume_analysis")
+        workflow.add_edge("resume_analysis", "job_search")
+        workflow.add_edge("job_search", "process_jobs")
+        workflow.add_edge("process_jobs", "generate_report")
+        workflow.add_edge("generate_report", END)
+        
+        # Compile the workflow
+        return workflow.compile()
     
-    async def execute(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the complete job search and application workflow."""
+    async def execute(self, state: AgentState) -> AgentState:
+        """Execute the complete job search and application workflow using LangGraph."""
         
         # Validate required inputs
         required_fields = ["role", "resume_path"]
-        if not self.validate_input(input_data, required_fields):
-            return {"status": "error", "message": "Missing required fields: role and resume_path"}
+        if not self.validate_input(state, required_fields):
+            state.status = "error"
+            state.error = "Missing required fields: role and resume_path"
+            return state
         
-        # Extract input parameters
-        role = input_data.get("role")
-        resume_path = input_data.get("resume_path")
-        location = input_data.get("location", Config.DEFAULT_LOCATION)
-        max_jobs = input_data.get("max_jobs", Config.MAX_JOBS_PER_SOURCE)
-        auto_apply = input_data.get("auto_apply", False)
+        # Generate session ID and initialize state
+        state.session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        state.start_time = datetime.now().isoformat()
+        state.current_step = "starting"
         
-        # Generate session ID
-        self.session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        
-        self.log_action("WORKFLOW_START", f"Session: {self.session_id}, Role: {role}, Location: {location}")
+        self.log_action("WORKFLOW_START", f"Session: {state.session_id}, Role: {state.role}, Location: {state.location}")
         
         try:
-            # Initialize workflow state
-            self.workflow_state = {
-                "session_id": self.session_id,
-                "start_time": datetime.now().isoformat(),
-                "input_parameters": input_data,
-                "status": "running",
-                "current_step": None,
-                "steps_completed": [],
-                "results": {}
-            }
+            # Execute the workflow
+            final_state = await self.workflow.ainvoke(state)
             
-            # Step 1: Analyze current resume
-            self.log_action("STEP_1", "Analyzing current resume")
-            self.workflow_state["current_step"] = "resume_analysis"
+            # Calculate duration
+            if final_state.start_time and final_state.end_time:
+                start = datetime.fromisoformat(final_state.start_time)
+                end = datetime.fromisoformat(final_state.end_time)
+                duration = end - start
+                hours, remainder = divmod(duration.total_seconds(), 3600)
+                minutes, seconds = divmod(remainder, 60)
+                final_state.workflow_duration = f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
             
-            resume_analysis = await self.resume_analysis_agent.safe_execute({
-                "resume_path": resume_path
-            })
+            # Save workflow state
+            await self._save_workflow_state(final_state)
             
-            if resume_analysis.get("status") == "error":
-                return self._create_error_result("Resume analysis failed", resume_analysis)
+            self.log_action("WORKFLOW_COMPLETE", f"Session {final_state.session_id} completed successfully")
             
-            self.workflow_state["steps_completed"].append("resume_analysis")
-            self.workflow_state["results"]["resume_analysis"] = resume_analysis
+            return final_state
             
-            # Step 2: Search for jobs
-            self.log_action("STEP_2", "Searching for jobs")
-            self.workflow_state["current_step"] = "job_search"
+        except Exception as e:
+            self.log_action("WORKFLOW_ERROR", f"Workflow failed: {str(e)}")
+            state.status = "error"
+            state.error = f"Workflow failed: {str(e)}"
+            state.end_time = datetime.now().isoformat()
+            return state
+    
+    def _create_job_processing_node(self) -> callable:
+        """Create a node for processing individual jobs."""
+        async def process_jobs_node(state: AgentState) -> AgentState:
+            """Process each job through skills analysis, resume modification, and application."""
             
-            job_search_result = await self.job_search_agent.safe_execute({
-                "role": role,
-                "location": location,
-                "max_jobs": max_jobs
-            })
+            if not state.job_search_results or state.job_search_results.get("status") != "success":
+                state.error = "Job search failed, cannot process jobs"
+                return state
             
-            if job_search_result.get("status") == "error":
-                return self._create_error_result("Job search failed", job_search_result)
+            jobs_found = state.job_search_results.get("jobs", [])
+            self.log_action("PROCESSING_JOBS", f"Processing {len(jobs_found)} jobs")
             
-            jobs_found = job_search_result.get("jobs", [])
-            self.log_action("JOBS_FOUND", f"Found {len(jobs_found)} jobs")
-            
-            self.workflow_state["steps_completed"].append("job_search")
-            self.workflow_state["results"]["job_search"] = job_search_result
-            
-            # Step 3: Process each job
             processed_jobs = []
             successful_applications = 0
             failed_applications = 0
@@ -103,7 +117,7 @@ class OrchestratorAgent(BaseAgent):
                 self.log_action("PROCESSING_JOB", f"{job_id}: {job.get('title', 'Unknown')} at {job.get('company', 'Unknown')}")
                 
                 job_result = await self._process_single_job(
-                    job, resume_analysis, job_id, auto_apply
+                    job, state.resume_analysis, job_id, state.auto_apply
                 )
                 
                 processed_jobs.append(job_result)
@@ -117,52 +131,39 @@ class OrchestratorAgent(BaseAgent):
                 await asyncio.sleep(Config.APPLICATION_DELAY)
                 
                 # Check if we've reached daily limit
-                if (successful_applications >= Config.MAX_DAILY_APPLICATIONS):
+                if successful_applications >= Config.MAX_DAILY_APPLICATIONS:
                     self.log_action("LIMIT_REACHED", f"Daily application limit ({Config.MAX_DAILY_APPLICATIONS}) reached")
                     break
             
-            # Step 4: Generate final report
-            self.workflow_state["current_step"] = "generating_report"
-            final_report = self._generate_final_report(processed_jobs, resume_analysis)
+            state.processed_jobs = processed_jobs
+            state.steps_completed.append("job_processing")
+            state.current_step = "job_processing_complete"
             
-            # Complete workflow
-            self.workflow_state["status"] = "completed"
-            self.workflow_state["end_time"] = datetime.now().isoformat()
-            self.workflow_state["current_step"] = "completed"
-            self.workflow_state["results"]["final_report"] = final_report
+            self.log_action("JOBS_PROCESSED", f"Processed {len(processed_jobs)} jobs, {successful_applications} applications submitted")
             
-            # Save workflow state
-            await self._save_workflow_state()
+            return state
+        
+        return process_jobs_node
+    
+    def _create_report_generation_node(self) -> callable:
+        """Create a node for generating the final report."""
+        async def generate_report_node(state: AgentState) -> AgentState:
+            """Generate comprehensive final report."""
             
-            self.log_action("WORKFLOW_COMPLETE", f"Processed {len(processed_jobs)} jobs, {successful_applications} applications submitted")
+            if not state.processed_jobs:
+                state.error = "No jobs processed, cannot generate report"
+                return state
             
-            return {
-                "status": "success",
-                "session_id": self.session_id,
-                "summary": {
-                    "jobs_found": len(jobs_found),
-                    "jobs_processed": len(processed_jobs),
-                    "applications_submitted": successful_applications,
-                    "applications_failed": failed_applications,
-                    "workflow_duration": self._calculate_duration()
-                },
-                "processed_jobs": processed_jobs,
-                "final_report": final_report,
-                "workflow_state": self.workflow_state
-            }
+            final_report = self._generate_final_report(state.processed_jobs, state.resume_analysis)
+            state.final_report = final_report
+            state.steps_completed.append("report_generation")
+            state.current_step = "completed"
+            state.status = "completed"
+            state.end_time = datetime.now().isoformat()
             
-        except Exception as e:
-            self.log_action("WORKFLOW_ERROR", f"Workflow failed: {str(e)}")
-            self.workflow_state["status"] = "error"
-            self.workflow_state["error"] = str(e)
-            self.workflow_state["end_time"] = datetime.now().isoformat()
-            
-            return {
-                "status": "error",
-                "message": f"Workflow failed: {str(e)}",
-                "session_id": self.session_id,
-                "workflow_state": self.workflow_state
-            }
+            return state
+        
+        return generate_report_node
     
     async def _process_single_job(self, job: Dict[str, Any], resume_analysis: Dict[str, Any], 
                                 job_id: str, auto_apply: bool) -> Dict[str, Any]:
@@ -179,71 +180,52 @@ class OrchestratorAgent(BaseAgent):
         }
         
         try:
-            # Step 3.1: Analyze job skills
+            # Step 1: Analyze job skills
             job_description = job.get("description", "")
             job_title = job.get("title", "")
             
             if job_description:
-                skills_analysis = await self.skills_analysis_agent.safe_execute({
-                    "job_description": job_description,
-                    "job_title": job_title
-                })
+                # Create temporary state for skills analysis
+                temp_state = AgentState(
+                    session_id="temp",
+                    role="temp",
+                    resume_path="temp",
+                    location="temp",
+                    max_jobs=1,
+                    auto_apply=False
+                )
                 
-                job_result["skill_analysis"] = skills_analysis
-                job_result["processing_steps"].append("skills_analysis")
+                skills_analysis = await self.skills_analysis_agent.safe_execute(temp_state)
                 
-                if skills_analysis.get("status") == "success":
-                    required_skills = skills_analysis.get("required_skills", [])
+                if skills_analysis.status == "error":
+                    job_result["skill_analysis"] = {"status": "error", "error": skills_analysis.error}
+                else:
+                    job_result["skill_analysis"] = skills_analysis.dict()
+                    job_result["processing_steps"].append("skills_analysis")
                     
-                    # Step 3.2: Modify resume for this job
-                    resume_modification = await self.resume_modification_agent.safe_execute({
-                        "current_resume": resume_analysis,
-                        "required_skills": required_skills,
-                        "job_description": job_description,
-                        "job_title": job_title,
-                        "company_name": job.get("company", "")
-                    })
+                    # Step 2: Modify resume for this job
+                    resume_modification = await self.resume_modification_agent.safe_execute(temp_state)
                     
-                    job_result["resume_modification"] = resume_modification
-                    job_result["processing_steps"].append("resume_modification")
-                    
-                    # Step 3.3: Apply to job (if enabled)
-                    if auto_apply and resume_modification.get("status") == "success":
-                        modified_resume_path = resume_modification.get("new_resume_path")
+                    if resume_modification.status == "error":
+                        job_result["resume_modification"] = {"status": "error", "error": resume_modification.error}
+                    else:
+                        job_result["resume_modification"] = resume_modification.dict()
+                        job_result["processing_steps"].append("resume_modification")
                         
-                        if modified_resume_path and os.path.exists(modified_resume_path):
-                            # Generate cover letter
-                            cover_letter = await self.application_agent.generate_cover_letter(
-                                job_description, job_title, job.get("company", ""),
-                                resume_analysis.get("resume_content", "")
-                            )
+                        # Step 3: Apply to job (if enabled)
+                        if auto_apply:
+                            application_result = await self.application_agent.safe_execute(temp_state)
                             
-                            # Apply to job
-                            application_result = await self.application_agent.safe_execute({
-                                "job_url": job.get("url", ""),
-                                "resume_path": modified_resume_path,
-                                "cover_letter": cover_letter,
-                                "job_title": job_title,
-                                "company_name": job.get("company", "")
-                            })
-                            
-                            job_result["application_status"] = application_result
-                            job_result["processing_steps"].append("application")
+                            if application_result.status == "error":
+                                job_result["application_status"] = {"status": "error", "error": application_result.error}
+                            else:
+                                job_result["application_status"] = application_result.dict()
+                                job_result["processing_steps"].append("application")
                         else:
                             job_result["application_status"] = {
                                 "status": "skipped",
-                                "message": "Modified resume not available"
+                                "message": "Auto-apply disabled"
                             }
-                    else:
-                        job_result["application_status"] = {
-                            "status": "skipped",
-                            "message": "Auto-apply disabled or resume modification failed"
-                        }
-                else:
-                    job_result["application_status"] = {
-                        "status": "skipped",
-                        "message": "Skills analysis failed"
-                    }
             else:
                 job_result["application_status"] = {
                     "status": "skipped",
@@ -275,7 +257,8 @@ class OrchestratorAgent(BaseAgent):
         all_required_skills = []
         for job in processed_jobs:
             skills = job.get("skill_analysis", {}).get("required_skills", [])
-            all_required_skills.extend([skill.get("skill", "") for skill in skills])
+            if isinstance(skills, list):
+                all_required_skills.extend([skill.get("skill", "") for skill in skills])
         
         # Count skill frequencies
         from collections import Counter
@@ -283,7 +266,9 @@ class OrchestratorAgent(BaseAgent):
         top_skills = skill_frequencies.most_common(10)
         
         # Current skills from resume
-        current_skills = [skill["skill"] for skill in resume_analysis.get("current_skills", [])]
+        current_skills = []
+        if resume_analysis and isinstance(resume_analysis, dict):
+            current_skills = [skill["skill"] for skill in resume_analysis.get("current_skills", [])]
         
         # Find skill gaps
         missing_skills = []
@@ -371,7 +356,7 @@ class OrchestratorAgent(BaseAgent):
         
         return recommendations
     
-    async def _save_workflow_state(self):
+    async def _save_workflow_state(self, state: AgentState):
         """Save workflow state to file for tracking and recovery."""
         
         try:
@@ -379,46 +364,15 @@ class OrchestratorAgent(BaseAgent):
             os.makedirs(Config.APPLICATION_LOG_DIR, exist_ok=True)
             
             # Save workflow state
-            state_file = os.path.join(Config.APPLICATION_LOG_DIR, f"workflow_{self.session_id}.json")
+            state_file = os.path.join(Config.APPLICATION_LOG_DIR, f"workflow_{state.session_id}.json")
             
             with open(state_file, 'w') as f:
-                json.dump(self.workflow_state, f, indent=2, default=str)
+                json.dump(state.dict(), f, indent=2, default=str)
             
             self.log_action("STATE_SAVED", f"Workflow state saved to {state_file}")
             
         except Exception as e:
             self.log_action("WARNING", f"Failed to save workflow state: {str(e)}")
-    
-    def _create_error_result(self, message: str, error_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create standardized error result."""
-        
-        self.workflow_state["status"] = "error"
-        self.workflow_state["error"] = message
-        self.workflow_state["error_details"] = error_data
-        self.workflow_state["end_time"] = datetime.now().isoformat()
-        
-        return {
-            "status": "error",
-            "message": message,
-            "session_id": self.session_id,
-            "workflow_state": self.workflow_state,
-            "error_details": error_data
-        }
-    
-    def _calculate_duration(self) -> str:
-        """Calculate workflow duration."""
-        
-        if "start_time" in self.workflow_state and "end_time" in self.workflow_state:
-            start = datetime.fromisoformat(self.workflow_state["start_time"])
-            end = datetime.fromisoformat(self.workflow_state["end_time"])
-            duration = end - start
-            
-            hours, remainder = divmod(duration.total_seconds(), 3600)
-            minutes, seconds = divmod(remainder, 60)
-            
-            return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
-        
-        return "Unknown"
     
     async def get_workflow_status(self, session_id: str) -> Dict[str, Any]:
         """Get status of a specific workflow session."""
@@ -457,3 +411,7 @@ class OrchestratorAgent(BaseAgent):
             "resume_modification": self.resume_modification_agent.get_stats(),
             "application": self.application_agent.get_stats()
         }
+    
+    def get_workflow_graph(self):
+        """Get the LangGraph workflow for inspection or modification."""
+        return self.workflow

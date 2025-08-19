@@ -5,7 +5,8 @@ from typing import Dict, Any, List
 import re
 from urllib.parse import urljoin, quote
 from datetime import datetime, timedelta
-from agents.base_agent import BaseAgent
+from agents.base_agent import BaseAgent, AgentState
+from agents.linkedin_agent import LinkedInAgent
 from config import Config
 
 class JobSearchAgent(BaseAgent):
@@ -14,6 +15,7 @@ class JobSearchAgent(BaseAgent):
     def __init__(self):
         super().__init__("JobSearchAgent")
         self.session = None
+        self.linkedin_agent = None
         self.job_sources = {
             "indeed": {
                 "base_url": "https://www.indeed.com",
@@ -23,7 +25,8 @@ class JobSearchAgent(BaseAgent):
             "linkedin": {
                 "base_url": "https://www.linkedin.com",
                 "search_path": "/jobs/search",
-                "enabled": True
+                "enabled": True,
+                "use_api": True  # Use LinkedIn API instead of web scraping
             },
             "glassdoor": {
                 "base_url": "https://www.glassdoor.com",
@@ -32,22 +35,25 @@ class JobSearchAgent(BaseAgent):
             }
         }
     
-    async def execute(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, state: AgentState) -> AgentState:
         """Find jobs matching the specified criteria."""
         
         # Validate required inputs
         required_fields = ["role"]
-        if not self.validate_input(input_data, required_fields):
-            return {"status": "error", "message": "Missing required fields"}
+        if not self.validate_input(state, required_fields):
+            state.status = "error"
+            state.error = "Missing required fields: role"
+            return state
         
-        role = input_data.get("role")
-        location = input_data.get("location", Config.DEFAULT_LOCATION)
-        max_jobs = input_data.get("max_jobs", Config.MAX_JOBS_PER_SOURCE)
+        role = state.role
+        location = state.location
+        max_jobs = state.max_jobs
         
         self.log_action("SEARCHING", f"Role: {role}, Location: {location}, Max: {max_jobs}")
         
-        # Initialize session
+        # Initialize session and LinkedIn agent
         await self._init_session()
+        await self._init_linkedin_agent()
         
         all_jobs = []
         search_results = {}
@@ -58,7 +64,13 @@ class JobSearchAgent(BaseAgent):
                 continue
                 
             try:
-                jobs = await self._search_source(source_name, role, location, max_jobs)
+                if source_name == "linkedin" and source_config.get("use_api", False):
+                    # Use LinkedIn API for better results
+                    jobs = await self._search_linkedin_api(role, location, max_jobs)
+                else:
+                    # Use web scraping for other sources
+                    jobs = await self._search_source(source_name, role, location, max_jobs)
+                
                 all_jobs.extend(jobs)
                 search_results[source_name] = {
                     "count": len(jobs),
@@ -74,25 +86,33 @@ class JobSearchAgent(BaseAgent):
                     "error": str(e)
                 }
         
-        # Close session
+        # Close session and LinkedIn agent
         await self._close_session()
+        await self._close_linkedin_agent()
         
         # Remove duplicates
         unique_jobs = self._remove_duplicates(all_jobs)
         
         self.log_action("COMPLETE", f"Found {len(unique_jobs)} unique jobs from {len(search_results)} sources")
         
-        return {
+        # Update state with results
+        state.job_search_results = {
             "status": "success",
             "jobs": unique_jobs,
             "total_found": len(unique_jobs),
             "source_results": search_results,
-            "search_criteria": {
+            "search_metadata": {
                 "role": role,
                 "location": location,
-                "max_jobs": max_jobs
+                "max_jobs": max_jobs,
+                "timestamp": datetime.now().isoformat()
             }
         }
+        
+        state.steps_completed.append("job_search")
+        state.current_step = "job_search_complete"
+        
+        return state
     
     async def _init_session(self):
         """Initialize HTTP session."""
@@ -110,6 +130,17 @@ class JobSearchAgent(BaseAgent):
         if self.session:
             await self.session.close()
             self.session = None
+    
+    async def _init_linkedin_agent(self):
+        """Initialize LinkedIn agent for API-based job search."""
+        if not self.linkedin_agent:
+            self.linkedin_agent = LinkedInAgent()
+    
+    async def _close_linkedin_agent(self):
+        """Close LinkedIn agent and clean up resources."""
+        if self.linkedin_agent:
+            await self.linkedin_agent.close()
+            self.linkedin_agent = None
     
     async def _search_source(self, source_name: str, role: str, location: str, max_jobs: int) -> List[Dict[str, Any]]:
         """Search a specific job source."""
@@ -215,15 +246,60 @@ class JobSearchAgent(BaseAgent):
             # Note: LinkedIn requires authentication for full access
             # This is a simplified version that would need enhancement for production use
             
-            # For now, return mock data structure
             self.log_action("INFO", "LinkedIn search would require authentication")
             
             # In a real implementation, you would:
-            # 1. Use LinkedIn API with proper authentication
-            # 2. Or use Selenium for web scraping with login
+            # 1. Use Selenium with login credentials
+            # 2. Handle LinkedIn's anti-bot measures
+            # 3. Parse job listings from the HTML
             
         except Exception as e:
             self.log_action("ERROR", f"LinkedIn search failed: {str(e)}")
+        
+        return jobs
+    
+    async def _search_linkedin_api(self, role: str, location: str, max_jobs: int) -> List[Dict[str, Any]]:
+        """Search LinkedIn using the API for better results."""
+        
+        try:
+            search_input = {
+                "operation": "search",
+                "keywords": role,
+                "location": location,
+                "max_results": max_jobs
+            }
+            
+            result = await self.linkedin_agent.execute(search_input)
+            
+            if result.get("status") == "success":
+                return result.get("jobs", [])
+            else:
+                self.log_action("LINKEDIN_API_ERROR", result.get("message", "Unknown error"))
+                # Fallback to web scraping if API fails
+                return await self._search_linkedin_web(role, location, max_jobs)
+                
+        except Exception as e:
+            self.log_action("LINKEDIN_API_ERROR", f"LinkedIn API search failed: {str(e)}")
+            # Fallback to web scraping
+            return await self._search_linkedin_web(role, location, max_jobs)
+    
+    async def _search_linkedin_web(self, role: str, location: str, max_jobs: int) -> List[Dict[str, Any]]:
+        """Fallback LinkedIn search using web scraping."""
+        jobs = []
+        
+        try:
+            # Note: LinkedIn requires authentication for full access
+            # This is a simplified version that would need enhancement for production use
+            
+            self.log_action("INFO", "LinkedIn web scraping fallback - limited results")
+            
+            # In a real implementation, you would:
+            # 1. Use Selenium with login credentials
+            # 2. Handle LinkedIn's anti-bot measures
+            # 3. Parse job listings from the HTML
+            
+        except Exception as e:
+            self.log_action("ERROR", f"LinkedIn web search failed: {str(e)}")
         
         return jobs
     

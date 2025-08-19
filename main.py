@@ -1,288 +1,215 @@
 #!/usr/bin/env python3
 """
-Main entry point for the Job Marketing System.
-
-This script provides a command-line interface to run the job search and application workflow.
+Main entry point for the LangGraph-based Job Application System.
+This system uses LangGraph to orchestrate multiple agents for automated job searching and application.
 """
 
 import asyncio
-import argparse
 import os
 import sys
-from typing import Dict, Any
 from datetime import datetime
+from typing import Dict, Any
+from dotenv import load_dotenv
 
-# Add project root to Python path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Add the project root to the Python path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from agents.orchestrator_agent import OrchestratorAgent
+from agents.base_agent import AgentState
 from config import Config
 from utils.logger import setup_logger
 
-logger = setup_logger("MainRunner")
+# Load environment variables
+load_dotenv()
+
+# Setup logging
+logger = setup_logger("main")
 
 async def main():
-    """Main entry point for the application."""
+    """Main function to run the job application workflow."""
     
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(
-        description="Job Marketing System",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python main.py --role "Software Engineer" --resume "./resume.docx"
-  python main.py --role "Data Scientist" --location "San Francisco" --max-jobs 20 --auto-apply
-  python main.py --role "Python Developer" --resume "./resume.docx" --location "remote" --dry-run
-        """
+    print("🚀 LangGraph-based Job Application System")
+    print("=" * 50)
+    
+    # Initialize the orchestrator agent
+    orchestrator = OrchestratorAgent()
+    
+    # Create initial state
+    initial_state = AgentState(
+        session_id="",
+        start_time="",
+        current_step="",
+        steps_completed=[],
+        status="",
+        error=None,
+        role="Software Engineer",
+        resume_path="./resume.docx",  # Update this path to your actual resume
+        location="San Francisco, CA",
+        max_jobs=5,
+        auto_apply=False,  # Set to True if you want to automatically apply
+        resume_analysis=None,
+        job_search_results=None,
+        processed_jobs=[],
+        final_report=None,
+        end_time=None,
+        workflow_duration=None
     )
     
-    parser.add_argument(
-        "--role", 
-        required=True, 
-        help="Target job role/title to search for"
+    try:
+        print(f"📋 Starting workflow for role: {initial_state.role}")
+        print(f"📍 Location: {initial_state.location}")
+        print(f"🎯 Max jobs to process: {initial_state.max_jobs}")
+        print(f"🤖 Auto-apply: {'Yes' if initial_state.auto_apply else 'No'}")
+        print(f"📄 Resume path: {initial_state.resume_path}")
+        print("-" * 50)
+        
+        # Execute the workflow
+        print("🔄 Executing workflow...")
+        final_state = await orchestrator.execute(initial_state)
+        
+        # Display results
+        print("\n✅ Workflow completed!")
+        print("=" * 50)
+        
+        if final_state.status == "completed":
+            print(f"📊 Summary:")
+            print(f"   • Session ID: {final_state.session_id}")
+            print(f"   • Duration: {final_state.workflow_duration}")
+            print(f"   • Steps completed: {', '.join(final_state.steps_completed)}")
+            
+            if final_state.job_search_results:
+                jobs_found = final_state.job_search_results.get("total_found", 0)
+                print(f"   • Jobs found: {jobs_found}")
+            
+            if final_state.processed_jobs:
+                processed_count = len(final_state.processed_jobs)
+                successful_applications = len([
+                    job for job in final_state.processed_jobs 
+                    if job.get("application_status", {}).get("status") == "success"
+                ])
+                print(f"   • Jobs processed: {processed_count}")
+                print(f"   • Applications submitted: {successful_applications}")
+            
+            if final_state.final_report:
+                report = final_state.final_report
+                print(f"\n📈 Final Report:")
+                print(f"   • Success rate: {report.get('summary', {}).get('success_rate', 0):.1f}%")
+                
+                skill_analysis = report.get("skill_analysis", {})
+                if skill_analysis:
+                    top_skills = skill_analysis.get("top_required_skills", [])
+                    missing_skills = skill_analysis.get("missing_skills", [])
+                    
+                    if top_skills:
+                        print(f"   • Top required skills: {', '.join([skill[0] for skill in top_skills[:5]])}")
+                    
+                    if missing_skills:
+                        print(f"   • Missing skills: {', '.join([skill['skill'] for skill in missing_skills[:3]])}")
+                
+                recommendations = report.get("recommendations", [])
+                if recommendations:
+                    print(f"\n💡 Recommendations:")
+                    for i, rec in enumerate(recommendations[:3], 1):
+                        print(f"   {i}. {rec}")
+        
+        elif final_state.status == "error":
+            print(f"❌ Workflow failed: {final_state.error}")
+        
+        # Save workflow state
+        if final_state.session_id:
+            print(f"\n💾 Workflow state saved with session ID: {final_state.session_id}")
+        
+    except Exception as e:
+        logger.error(f"Main execution failed: {str(e)}")
+        print(f"❌ Execution failed: {str(e)}")
+        return 1
+    
+    return 0
+
+async def run_example_workflow():
+    """Run a simplified example workflow to demonstrate the system."""
+    
+    print("🧪 Running Example Workflow")
+    print("=" * 30)
+    
+    # Create a simple state for demonstration
+    example_state = AgentState(
+        session_id="",
+        start_time="",
+        current_step="",
+        steps_completed=[],
+        status="",
+        error=None,
+        role="Data Scientist",
+        resume_path="./example_resume.docx",
+        location="New York, NY",
+        max_jobs=3,
+        auto_apply=False,
+        resume_analysis=None,
+        job_search_results=None,
+        processed_jobs=[],
+        final_report=None,
+        end_time=None,
+        workflow_duration=None
     )
     
-    parser.add_argument(
-        "--resume", 
-        required=True, 
-        help="Path to your resume file (.docx or .txt)"
-    )
+    try:
+        orchestrator = OrchestratorAgent()
+        
+        # Get the workflow graph for inspection
+        workflow_graph = orchestrator.get_workflow_graph()
+        print(f"📊 Workflow graph created with {len(workflow_graph.nodes)} nodes")
+        
+        # Show workflow structure
+        print("\n🔄 Workflow Structure:")
+        for node_name in workflow_graph.nodes:
+            print(f"   • {node_name}")
+        
+        print("\n✅ Example workflow setup completed successfully!")
+        
+    except Exception as e:
+        print(f"❌ Example workflow failed: {str(e)}")
+        return 1
     
-    parser.add_argument(
-        "--location", 
-        default=Config.DEFAULT_LOCATION, 
-        help=f"Job location (default: {Config.DEFAULT_LOCATION})"
-    )
+    return 0
+
+def show_usage():
+    """Show usage information."""
     
-    parser.add_argument(
-        "--max-jobs", 
-        type=int, 
-        default=Config.MAX_JOBS_PER_SOURCE, 
-        help=f"Maximum number of jobs to process (default: {Config.MAX_JOBS_PER_SOURCE})"
-    )
+    print("Usage:")
+    print("  python main.py                    # Run the full workflow")
+    print("  python main.py --example          # Run example workflow")
+    print("  python main.py --help             # Show this help")
+    print("\nEnvironment Variables:")
+    print("  OPENAI_API_KEY                    # OpenAI API key for AI features")
+    print("  LINKEDIN_CLIENT_ID                # LinkedIn API client ID")
+    print("  LINKEDIN_CLIENT_SECRET            # LinkedIn API client secret")
+    print("  LINKEDIN_ACCESS_TOKEN             # LinkedIn API access token")
+
+if __name__ == "__main__":
+    import argparse
     
-    parser.add_argument(
-        "--auto-apply", 
-        action="store_true", 
-        help="Automatically apply to jobs (use with caution)"
-    )
-    
-    parser.add_argument(
-        "--dry-run", 
-        action="store_true", 
-        help="Run without actually applying to jobs"
-    )
-    
-    parser.add_argument(
-        "--config-check", 
-        action="store_true", 
-        help="Check configuration and exit"
-    )
-    
-    parser.add_argument(
-        "--session-id", 
-        help="Resume a previous workflow session"
-    )
+    parser = argparse.ArgumentParser(description="LangGraph-based Job Application System")
+    parser.add_argument("--example", action="store_true", help="Run example workflow")
+    parser.add_argument("--help", action="store_true", help="Show usage information")
     
     args = parser.parse_args()
     
-    # Check configuration
-    if args.config_check:
-        check_configuration()
-        return
-    
-    # Validate configuration
-    if not Config.validate_config():
-        logger.error("Configuration validation failed. Please check your .env file.")
-        return
-    
-    # Create necessary directories
-    Config.create_directories()
-    
-    # Validate resume file
-    if not os.path.exists(args.resume):
-        logger.error(f"Resume file not found: {args.resume}")
-        return
-    
-    # Log startup
-    logger.info("=" * 60)
-    logger.info("Multi-Agent Job Application System Starting")
-    logger.info("=" * 60)
-    logger.info(f"Role: {args.role}")
-    logger.info(f"Resume: {args.resume}")
-    logger.info(f"Location: {args.location}")
-    logger.info(f"Max Jobs: {args.max_jobs}")
-    logger.info(f"Auto Apply: {args.auto_apply}")
-    logger.info(f"Dry Run: {args.dry_run}")
+    if args.help:
+        show_usage()
+        sys.exit(0)
     
     try:
-        # Initialize orchestrator
-        orchestrator = OrchestratorAgent()
-        
-        # Resume existing session or start new workflow
-        if args.session_id:
-            result = await resume_workflow(orchestrator, args.session_id)
+        if args.example:
+            exit_code = asyncio.run(run_example_workflow())
         else:
-            result = await run_workflow(orchestrator, args)
+            exit_code = asyncio.run(main())
         
-        # Display results
-        display_results(result)
+        sys.exit(exit_code)
         
     except KeyboardInterrupt:
-        logger.info("Workflow interrupted by user")
+        print("\n\n⏹️  Execution interrupted by user")
+        sys.exit(1)
     except Exception as e:
-        logger.error(f"Workflow failed with error: {str(e)}")
-        raise
-
-async def run_workflow(orchestrator: OrchestratorAgent, args) -> Dict[str, Any]:
-    """Run the complete workflow."""
-    
-    input_data = {
-        "role": args.role,
-        "resume_path": args.resume,
-        "location": args.location,
-        "max_jobs": args.max_jobs,
-        "auto_apply": args.auto_apply and not args.dry_run
-    }
-    
-    logger.info("Starting workflow execution...")
-    start_time = datetime.now()
-    
-    result = await orchestrator.safe_execute(input_data)
-    
-    end_time = datetime.now()
-    duration = end_time - start_time
-    
-    logger.info(f"Workflow completed in {duration}")
-    
-    return result
-
-async def resume_workflow(orchestrator: OrchestratorAgent, session_id: str) -> Dict[str, Any]:
-    """Resume a previous workflow session."""
-    
-    logger.info(f"Attempting to resume workflow session: {session_id}")
-    
-    status_result = await orchestrator.get_workflow_status(session_id)
-    
-    if status_result.get("status") == "found":
-        workflow_state = status_result.get("workflow_state", {})
-        logger.info(f"Found session {session_id} with status: {workflow_state.get('status', 'unknown')}")
-        
-        if workflow_state.get("status") == "completed":
-            logger.info("Session already completed")
-            return {"status": "already_completed", "workflow_state": workflow_state}
-        else:
-            logger.warning("Session resumption not fully implemented - displaying last known state")
-            return {"status": "resumed", "workflow_state": workflow_state}
-    else:
-        logger.error(f"Session {session_id} not found")
-        return {"status": "not_found"}
-
-def display_results(result: Dict[str, Any]):
-    """Display workflow results in a user-friendly format."""
-    
-    print("\n" + "=" * 60)
-    print("WORKFLOW RESULTS")
-    print("=" * 60)
-    
-    if result.get("status") == "success":
-        summary = result.get("summary", {})
-        
-        print(f"Session ID: {result.get('session_id', 'Unknown')}")
-        print(f"Jobs Found: {summary.get('jobs_found', 0)}")
-        print(f"Jobs Processed: {summary.get('jobs_processed', 0)}")
-        print(f"Applications Submitted: {summary.get('applications_submitted', 0)}")
-        print(f"Applications Failed: {summary.get('applications_failed', 0)}")
-        print(f"Workflow Duration: {summary.get('workflow_duration', 'Unknown')}")
-        
-        # Display job details
-        processed_jobs = result.get("processed_jobs", [])
-        if processed_jobs:
-            print("\nJOB PROCESSING DETAILS:")
-            print("-" * 40)
-            
-            for job in processed_jobs[:10]:  # Show first 10 jobs
-                job_info = job.get("job_info", {})
-                app_status = job.get("application_status", {})
-                
-                print(f"• {job_info.get('title', 'Unknown Title')} at {job_info.get('company', 'Unknown Company')}")
-                print(f"  Status: {app_status.get('status', 'unknown')}")
-                
-                if len(processed_jobs) > 10:
-                    print(f"... and {len(processed_jobs) - 10} more jobs")
-        
-        # Display recommendations
-        final_report = result.get("final_report", {})
-        recommendations = final_report.get("recommendations", [])
-        
-        if recommendations:
-            print("\nRECOMMENDATIONS:")
-            print("-" * 40)
-            for i, rec in enumerate(recommendations, 1):
-                print(f"{i}. {rec}")
-        
-        # Display skill analysis
-        skill_analysis = final_report.get("skill_analysis", {})
-        missing_skills = skill_analysis.get("missing_skills", [])
-        
-        if missing_skills:
-            print("\nTOP MISSING SKILLS:")
-            print("-" * 40)
-            for skill_data in missing_skills[:5]:
-                skill = skill_data.get("skill", "")
-                frequency = skill_data.get("demand_frequency", 0)
-                print(f"• {skill} (mentioned in {frequency} jobs)")
-    
-    elif result.get("status") == "error":
-        print(f"❌ Workflow failed: {result.get('message', 'Unknown error')}")
-        
-        error_details = result.get("error_details", {})
-        if error_details:
-            print(f"Error details: {error_details}")
-    
-    else:
-        print(f"Workflow status: {result.get('status', 'unknown')}")
-        print(f"Message: {result.get('message', 'No message')}")
-    
-    print("\n" + "=" * 60)
-
-def check_configuration():
-    """Check and display configuration status."""
-    
-    print("\n" + "=" * 60)
-    print("CONFIGURATION CHECK")
-    print("=" * 60)
-    
-    # Check required configuration
-    config_status = {
-        "OpenAI API Key": "✅" if Config.OPENAI_API_KEY else "❌",
-        "Output Resume Directory": "✅" if os.path.exists(Config.OUTPUT_RESUME_DIR) else "⚠️ (will be created)",
-        "Application Log Directory": "✅" if os.path.exists(Config.APPLICATION_LOG_DIR) else "⚠️ (will be created)",
-    }
-    
-    print("Required Configuration:")
-    for item, status in config_status.items():
-        print(f"  {item}: {status}")
-    
-    # Check optional configuration
-    optional_config = {
-        "LinkedIn Email": "✅" if Config.LINKEDIN_EMAIL else "❌ (LinkedIn applications disabled)",
-        "Indeed Email": "✅" if Config.INDEED_EMAIL else "❌ (Indeed applications may be limited)",
-    }
-    
-    print("\nOptional Configuration:")
-    for item, status in optional_config.items():
-        print(f"  {item}: {status}")
-    
-    # Display current settings
-    print(f"\nCurrent Settings:")
-    print(f"  Max Jobs Per Source: {Config.MAX_JOBS_PER_SOURCE}")
-    print(f"  Application Delay: {Config.APPLICATION_DELAY} seconds")
-    print(f"  Max Daily Applications: {Config.MAX_DAILY_APPLICATIONS}")
-    print(f"  Default Location: {Config.DEFAULT_LOCATION}")
-    
-    print("\n" + "=" * 60)
-
-if __name__ == "__main__":
-    # Run the main function
-    asyncio.run(main())
+        print(f"\n❌ Unexpected error: {str(e)}")
+        sys.exit(1)

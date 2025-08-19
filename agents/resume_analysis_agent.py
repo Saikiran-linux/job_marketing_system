@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 import openai
 from openai import AsyncOpenAI
-from agents.base_agent import BaseAgent
+from agents.base_agent import BaseAgent, AgentState
 from config import Config
 
 class ResumeAnalysisAgent(BaseAgent):
@@ -28,18 +28,22 @@ class ResumeAnalysisAgent(BaseAgent):
             "awards": ["awards", "honors", "achievements", "recognition"]
         }
     
-    async def execute(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, state: AgentState) -> AgentState:
         """Analyze resume and extract current skills and content structure."""
         
         # Validate required inputs
         required_fields = ["resume_path"]
-        if not self.validate_input(input_data, required_fields):
-            return {"status": "error", "message": "Missing resume path"}
+        if not self.validate_input(state, required_fields):
+            state.status = "error"
+            state.error = "Missing resume path"
+            return state
         
-        resume_path = input_data.get("resume_path")
+        resume_path = state.resume_path
         
         if not os.path.exists(resume_path):
-            return {"status": "error", "message": f"Resume file not found: {resume_path}"}
+            state.status = "error"
+            state.error = f"Resume file not found: {resume_path}"
+            return state
         
         self.log_action("ANALYZING", f"Resume: {os.path.basename(resume_path)}")
         
@@ -48,7 +52,9 @@ class ResumeAnalysisAgent(BaseAgent):
             resume_content = await self._extract_resume_content(resume_path)
             
             if not resume_content:
-                return {"status": "error", "message": "Could not extract content from resume"}
+                state.status = "error"
+                state.error = "Could not extract content from resume"
+                return state
             
             # Analyze resume structure
             sections = self._identify_sections(resume_content)
@@ -71,7 +77,8 @@ class ResumeAnalysisAgent(BaseAgent):
             # Calculate resume statistics
             stats = self._calculate_resume_stats(resume_content, sections)
             
-            result = {
+            # Update state with results
+            state.resume_analysis = {
                 "status": "success",
                 "resume_content": resume_content,
                 "sections": sections,
@@ -85,15 +92,17 @@ class ResumeAnalysisAgent(BaseAgent):
                 "analysis_timestamp": datetime.now().isoformat()
             }
             
+            state.steps_completed.append("resume_analysis")
+            state.current_step = "resume_analysis_complete"
+            
             self.log_action("SUCCESS", f"Extracted {len(current_skills)} skills from resume")
-            return result
+            return state
             
         except Exception as e:
             self.log_action("ERROR", f"Resume analysis failed: {str(e)}")
-            return {
-                "status": "error",
-                "message": f"Resume analysis failed: {str(e)}"
-            }
+            state.status = "error"
+            state.error = f"Resume analysis failed: {str(e)}"
+            return state
     
     async def _extract_resume_content(self, resume_path: str) -> str:
         """Extract text content from resume file."""
