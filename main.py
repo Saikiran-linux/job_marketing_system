@@ -14,9 +14,10 @@ from dotenv import load_dotenv
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from agents.orchestrator_agent import OrchestratorAgent
+from agents.smart_orchestrator_agent import SmartOrchestratorAgent
 from agents.base_agent import AgentState
 from config import Config
+from job_config import JobConfig
 from utils.logger import setup_logger
 
 # Load environment variables
@@ -31,10 +32,14 @@ async def main():
     print("🚀 LangGraph-based Job Application System")
     print("=" * 50)
     
-    # Initialize the orchestrator agent
-    orchestrator = OrchestratorAgent()
+    # Print current configuration
+    JobConfig.print_config()
+    print("-" * 50)
     
-    # Create initial state
+    # Initialize the smart orchestrator agent
+    orchestrator = SmartOrchestratorAgent()
+    
+    # Create initial state using JobConfig
     initial_state = AgentState(
         session_id="",
         start_time="",
@@ -42,11 +47,11 @@ async def main():
         steps_completed=[],
         status="",
         error=None,
-        role="Software Engineer",
-        resume_path="./resume.docx",  # Update this path to your actual resume
-        location="San Francisco, CA",
-        max_jobs=5,
-        auto_apply=False,  # Set to True if you want to automatically apply
+        role=JobConfig.ROLE,                             # From JobConfig
+        resume_path=JobConfig.RESUME_PATH,               # From JobConfig
+        location=JobConfig.LOCATION,                     # From JobConfig
+        max_jobs=JobConfig.MAX_JOBS,                     # From JobConfig
+        auto_apply=JobConfig.AUTO_APPLY,                 # From JobConfig
         resume_analysis=None,
         job_search_results=None,
         processed_jobs=[],
@@ -61,6 +66,11 @@ async def main():
         print(f"🎯 Max jobs to process: {initial_state.max_jobs}")
         print(f"🤖 Auto-apply: {'Yes' if initial_state.auto_apply else 'No'}")
         print(f"📄 Resume path: {initial_state.resume_path}")
+        print(f"🔍 Keywords: {', '.join(JobConfig.KEYWORDS)}")
+        print(f"❌ Exclude: {', '.join(JobConfig.EXCLUDE_KEYWORDS)}")
+        print(f"💰 Salary range: ${JobConfig.MIN_SALARY or 'Any'} - ${JobConfig.MAX_SALARY or 'Any'}")
+        print(f"📋 Job types: {', '.join(JobConfig.JOB_TYPES)}")
+        print(f"🎯 Experience: {', '.join(JobConfig.EXPERIENCE_LEVELS)}")
         print("-" * 50)
         
         # Execute the workflow
@@ -71,27 +81,48 @@ async def main():
         print("\n✅ Workflow completed!")
         print("=" * 50)
         
-        if final_state.status == "completed":
+        if hasattr(final_state, 'status') and getattr(final_state, 'status') == "completed":
             print(f"📊 Summary:")
-            print(f"   • Session ID: {final_state.session_id}")
-            print(f"   • Duration: {final_state.workflow_duration}")
-            print(f"   • Steps completed: {', '.join(final_state.steps_completed)}")
+            session_id = getattr(final_state, 'session_id', 'unknown')
+            workflow_duration = getattr(final_state, 'workflow_duration', 'unknown')
+            steps_completed = getattr(final_state, 'steps_completed', [])
             
-            if final_state.job_search_results:
-                jobs_found = final_state.job_search_results.get("total_found", 0)
+            print(f"   • Session ID: {session_id}")
+            print(f"   • Duration: {workflow_duration}")
+            print(f"   • Steps completed: {', '.join(steps_completed)}")
+            
+            job_search_results = getattr(final_state, 'job_search_results', None)
+            if job_search_results:
+                jobs_found = job_search_results.get("total_found", 0)
                 print(f"   • Jobs found: {jobs_found}")
             
-            if final_state.processed_jobs:
-                processed_count = len(final_state.processed_jobs)
+            # Show Glassdoor results
+            glassdoor_jobs = getattr(final_state, 'glassdoor_jobs', [])
+            if glassdoor_jobs:
+                print(f"   • Glassdoor jobs found: {len(glassdoor_jobs)}")
+            
+            filtered_glassdoor_jobs = getattr(final_state, 'filtered_glassdoor_jobs', [])
+            if filtered_glassdoor_jobs:
+                print(f"   • Glassdoor jobs filtered: {len(filtered_glassdoor_jobs)}")
+            
+            glassdoor_applications = getattr(final_state, 'glassdoor_applications', [])
+            if glassdoor_applications:
+                successful_glassdoor = len([app for app in glassdoor_applications if app.get("status") == "success"])
+                print(f"   • Glassdoor applications: {successful_glassdoor}/{len(glassdoor_applications)} successful")
+            
+            processed_jobs = getattr(final_state, 'processed_jobs', [])
+            if processed_jobs:
+                processed_count = len(processed_jobs)
                 successful_applications = len([
-                    job for job in final_state.processed_jobs 
+                    job for job in processed_jobs 
                     if job.get("application_status", {}).get("status") == "success"
                 ])
-                print(f"   • Jobs processed: {processed_count}")
-                print(f"   • Applications submitted: {successful_applications}")
+                print(f"   • Total jobs processed: {processed_count}")
+                print(f"   • Total applications submitted: {successful_applications}")
             
-            if final_state.final_report:
-                report = final_state.final_report
+            final_report = getattr(final_state, 'final_report', None)
+            if final_report:
+                report = final_report
                 print(f"\n📈 Final Report:")
                 print(f"   • Success rate: {report.get('summary', {}).get('success_rate', 0):.1f}%")
                 
@@ -112,12 +143,14 @@ async def main():
                     for i, rec in enumerate(recommendations[:3], 1):
                         print(f"   {i}. {rec}")
         
-        elif final_state.status == "error":
-            print(f"❌ Workflow failed: {final_state.error}")
+        elif hasattr(final_state, 'status') and getattr(final_state, 'status') == "error":
+            error_msg = getattr(final_state, 'error', 'Unknown error')
+            print(f"❌ Workflow failed: {error_msg}")
         
         # Save workflow state
-        if final_state.session_id:
-            print(f"\n💾 Workflow state saved with session ID: {final_state.session_id}")
+        session_id = getattr(final_state, 'session_id', None)
+        if session_id:
+            print(f"\n💾 Workflow state saved with session ID: {session_id}")
         
     except Exception as e:
         logger.error(f"Main execution failed: {str(e)}")
@@ -154,7 +187,7 @@ async def run_example_workflow():
     )
     
     try:
-        orchestrator = OrchestratorAgent()
+        orchestrator = SmartOrchestratorAgent()
         
         # Get the workflow graph for inspection
         workflow_graph = orchestrator.get_workflow_graph()
@@ -182,9 +215,10 @@ def show_usage():
     print("  python main.py --usage            # Show this help")
     print("\nEnvironment Variables:")
     print("  OPENAI_API_KEY                    # OpenAI API key for AI features")
-    print("  LINKEDIN_CLIENT_ID                # LinkedIn API client ID")
-    print("  LINKEDIN_CLIENT_SECRET            # LinkedIn API client secret")
-    print("  LINKEDIN_ACCESS_TOKEN             # LinkedIn API access token")
+    print("  LINKEDIN_EMAIL                    # LinkedIn account email")
+    print("  LINKEDIN_PASSWORD                 # LinkedIn account password")
+    print("  GLASSDOOR_EMAIL                   # Glassdoor account email")
+    print("  GLASSDOOR_PASSWORD                # Glassdoor account password")
 
 if __name__ == "__main__":
     import argparse

@@ -15,3 +15,6 @@ numpy==1.26.4
 pydantic==2.10.6
 typing-extensions==4.12.2
 matplotlib>=3.5.0
+
+# Add Supabase client (compatible version)
+supabase>=2.18.0

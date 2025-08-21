@@ -8,53 +8,30 @@
 # OpenAI API Configuration
 OPENAI_API_KEY=your_openai_api_key_here
 
-# LinkedIn API Configuration
-# Get these from https://www.linkedin.com/developers/
-LINKEDIN_CLIENT_ID=your_linkedin_client_id_here
-LINKEDIN_CLIENT_SECRET=your_linkedin_client_secret_here
-LINKEDIN_REFRESH_TOKEN=your_linkedin_refresh_token_here
-LINKEDIN_ACCESS_TOKEN=your_linkedin_access_token_here
+# =============================================================================
+# JOB BOARD CREDENTIALS (Web Automation - No API Tokens Needed!)
+# =============================================================================
 
-# LinkedIn API Settings
-LINKEDIN_API_TIMEOUT=30
-LINKEDIN_MAX_RETRIES=3
-LINKEDIN_RATE_LIMIT_DELAY=1.0
-
-# Job Board Credentials (Optional - for web scraping fallback)
+# LinkedIn Credentials (for job searching and applications)
 LINKEDIN_EMAIL=your_linkedin_email@example.com
 LINKEDIN_PASSWORD=your_linkedin_password_here
+
+# Glassdoor Credentials (for job searching and applications)
+GLASSDOOR_EMAIL=your_glassdoor_email@example.com
+GLASSDOOR_PASSWORD=your_glassdoor_password_here
+
+# Indeed Credentials (optional - for enhanced Indeed access)
 INDEED_EMAIL=your_indeed_email@example.com
 INDEED_PASSWORD=your_indeed_password_here
 
 # =============================================================================
-# OPTIONAL JOB BOARD CREDENTIALS
+# WEB AUTOMATION SETTINGS
 # =============================================================================
 
-# LinkedIn Credentials (for LinkedIn job applications)
-# LINKEDIN_EMAIL=your_linkedin_email@example.com
-# LINKEDIN_PASSWORD=your_linkedin_password
-
-# Indeed Credentials (for enhanced Indeed access)
-# INDEED_EMAIL=your_indeed_email@example.com
-# INDEED_PASSWORD=your_indeed_password
-
-# =============================================================================
-# APPLICATION SETTINGS
-# =============================================================================
-
-# Job Search Settings
-MAX_JOBS_PER_SOURCE=50
-DEFAULT_LOCATION=remote
-DEFAULT_JOB_TYPES=full-time,contract,remote
-
-# Application Behavior
-APPLICATION_DELAY=5
-MAX_DAILY_APPLICATIONS=300
-SKILL_MATCH_THRESHOLD=0.7
-
-# Resume Settings
-MAX_RESUME_PAGES=2
-MIN_SKILL_MENTIONS=3
+# Browser automation settings
+WEB_AUTOMATION_TIMEOUT=30
+WEB_AUTOMATION_MAX_RETRIES=3
+WEB_AUTOMATION_DELAY=2.0
 
 # =============================================================================
 # FILE PATHS
@@ -69,16 +46,16 @@ APPLICATION_LOG_DIR=./logs/
 # DATABASE CONFIGURATION (Optional)
 # =============================================================================
 
-# SQLite database for tracking applications
+# Supabase Configuration
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+
+# Database Selection
+USE_SUPABASE=true
+
+# SQLite database for tracking applications (fallback)
 DATABASE_URL=sqlite:///job_applications.db
-
-# =============================================================================
-# SAFETY SETTINGS
-# =============================================================================
-
-# Safety limits to prevent overwhelming job sites
-MAX_REQUESTS_PER_MINUTE=10
-USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36
 
 # =============================================================================
 # INSTRUCTIONS
@@ -96,5 +73,14 @@ USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, 
 # 3. Add billing information if you haven't already
 # 4. Replace "your_openai_api_key_here" with your actual key
 
-# IMPORTANT: The system works with just the OpenAI API key.
-# Job board credentials are optional and improve functionality.
+# For Job Board Access:
+# 1. Use your regular LinkedIn and Glassdoor accounts
+# 2. No API tokens or developer accounts needed!
+# 3. Just provide your email and password
+# 4. The system will handle the rest automatically
+
+# IMPORTANT: This system works with just the OpenAI API key and your job board credentials.
+# No complex API setup required - just email and password!
+
+# NOTE: Job search configuration (keywords, filters, salary range, etc.) is now managed
+# in the job_config.py file. You can customize those settings directly in that file.

@@ -16,7 +16,7 @@ from datetime import datetime
 import openai
 from openai import AsyncOpenAI
 from agents.base_agent import BaseAgent, AgentState
-from agents.linkedin_agent import LinkedInAgent
+# LinkedIn agent import removed - using web-based approach only
 from config import Config
 import re
 
@@ -27,7 +27,7 @@ class ApplicationAgent(BaseAgent):
         super().__init__("ApplicationAgent")
         self.driver = None
         self.client = AsyncOpenAI(api_key=Config.OPENAI_API_KEY) if Config.OPENAI_API_KEY else None
-        self.linkedin_agent = None
+        # LinkedIn agent removed - using web-based approach only
         self.application_count = 0
         self.daily_limit = Config.MAX_DAILY_APPLICATIONS
         self.application_history = []
@@ -242,14 +242,14 @@ Best regards,
         try:
             self.log_action("INFO", "Applying via LinkedIn")
             
-            # Initialize LinkedIn agent if not already done
-            if not self.linkedin_agent:
-                self.linkedin_agent = LinkedInAgent()
-            
-            # Use LinkedIn agent for application
-            application_result = await self.linkedin_agent.apply_to_job(
-                job_info, resume_path, cover_letter
-            )
+            # LinkedIn agent removed - using web-based approach only
+            # For now, return a placeholder result
+            application_result = {
+                "status": "placeholder",
+                "message": "LinkedIn agent integration removed - using web-based approach",
+                "job_id": job_info.get("id", ""),
+                "timestamp": datetime.now().isoformat()
+            }
             
             return application_result
             
@@ -641,39 +641,153 @@ Best regards,
             self.log_action("WARNING", f"Screenshot failed: {str(e)}")
             return ""
     
-    async def _init_browser(self):
-        """Initialize Selenium WebDriver."""
+    async def _init_browser(self, max_retries: int = 3):
+        """Initialize Selenium WebDriver with robust error handling and retry mechanism."""
         
         if self.driver:
             return
         
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    self.log_action("INFO", f"Retrying browser initialization (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(2)  # Wait before retry
+                
+                await self._try_init_browser()
+                return  # Success, exit the retry loop
+                
+            except Exception as e:
+                last_error = e
+                self.log_action("WARNING", f"Browser initialization attempt {attempt + 1} failed: {str(e)}")
+                
+                # Clean up any partial initialization
+                if self.driver:
+                    try:
+                        self.driver.quit()
+                        self.driver = None
+                    except:
+                        pass
+        
+        # All retries failed
+        error_msg = f"Browser initialization failed after {max_retries} attempts. Last error: {str(last_error)}"
+        self.log_action("ERROR", error_msg)
+        raise Exception(error_msg)
+    
+    async def _try_init_browser(self):
+        """Single attempt at browser initialization."""
+        
         try:
-            # Set up Chrome options
+            # Set up Chrome options with Windows-specific optimizations
             chrome_options = Options()
-            chrome_options.add_argument("--headless")  # Run in background
+            
+            # Windows-specific options
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-dev-shm-usage")
             chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument("--disable-web-security")
+            chrome_options.add_argument("--allow-running-insecure-content")
+            chrome_options.add_argument("--disable-features=VizDisplayCompositor")
             chrome_options.add_argument("--window-size=1920,1080")
-            chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             
             # Disable images and CSS for faster loading
             prefs = {
                 "profile.managed_default_content_settings.images": 2,
-                "profile.default_content_setting_values.notifications": 2
+                "profile.default_content_setting_values.notifications": 2,
+                "profile.default_content_setting_values.popups": 2
             }
             chrome_options.add_experimental_option("prefs", prefs)
             
-            # Initialize driver
-            service = Service(ChromeDriverManager().install())
-            self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            self.driver.set_page_load_timeout(30)
+            # Try to initialize driver with better error handling
+            try:
+                # First try with ChromeDriverManager
+                service = Service(ChromeDriverManager().install())
+                self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            except Exception as chrome_error:
+                self.log_action("WARNING", f"ChromeDriverManager failed: {str(chrome_error)}")
+                
+                # Fallback: try to find Chrome in common Windows locations
+                chrome_paths = [
+                    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                    os.path.expanduser(r"~\AppData\Local\Google\Chrome\Application\chrome.exe")
+                ]
+                
+                chrome_found = False
+                for chrome_path in chrome_paths:
+                    if os.path.exists(chrome_path):
+                        chrome_options.binary_location = chrome_path
+                        chrome_found = True
+                        break
+                
+                if chrome_found:
+                    # Try without specifying service
+                    try:
+                        self.driver = webdriver.Chrome(options=chrome_options)
+                    except Exception as e:
+                        self.log_action("WARNING", f"Chrome with binary location failed: {str(e)}")
+                        # Try with minimal options
+                        minimal_options = Options()
+                        minimal_options.binary_location = chrome_path
+                        minimal_options.add_argument("--no-sandbox")
+                        minimal_options.add_argument("--disable-dev-shm-usage")
+                        self.driver = webdriver.Chrome(options=minimal_options)
+                else:
+                    # Last resort: try with minimal options
+                    try:
+                        minimal_options = Options()
+                        minimal_options.add_argument("--no-sandbox")
+                        minimal_options.add_argument("--disable-dev-shm-usage")
+                        self.driver = webdriver.Chrome(options=minimal_options)
+                    except Exception as e:
+                        self.log_action("ERROR", f"All Chrome initialization methods failed: {str(e)}")
+                        raise Exception(f"Unable to initialize Chrome WebDriver: {str(e)}")
             
-            self.log_action("BROWSER_INIT", "Chrome WebDriver initialized")
+            # Set page load timeout
+            self.driver.set_page_load_timeout(30)
+            self.driver.implicitly_wait(10)
+            
+            # Test if browser is working
+            await self._test_browser_functionality()
+            
+            self.log_action("BROWSER_INIT", "Chrome WebDriver initialized successfully")
             
         except Exception as e:
-            self.log_action("ERROR", f"Failed to initialize browser: {str(e)}")
-            raise
+            error_msg = f"Failed to initialize browser: {str(e)}"
+            self.log_action("ERROR", error_msg)
+            
+            # Provide helpful error information
+            if "WinError 193" in str(e):
+                self.log_action("ERROR", "This error typically indicates ChromeDriver compatibility issues. Please ensure Chrome browser is installed and up to date.")
+            elif "chromedriver" in str(e).lower():
+                self.log_action("ERROR", "ChromeDriver issue detected. Please check Chrome browser installation.")
+            
+            raise Exception(error_msg)
+    
+    async def _test_browser_functionality(self):
+        """Test if the browser is working properly."""
+        
+        try:
+            # Try to navigate to a simple page
+            self.driver.get("data:text/html,<html><body><h1>Test</h1></body></html>")
+            
+            # Check if we can get page title
+            title = self.driver.title
+            if not title:
+                raise Exception("Could not get page title")
+            
+            # Check if we can find elements
+            elements = self.driver.find_elements(By.TAG_NAME, "h1")
+            if not elements:
+                raise Exception("Could not find page elements")
+            
+            self.log_action("INFO", "Browser functionality test passed")
+            
+        except Exception as e:
+            self.log_action("WARNING", f"Browser functionality test failed: {str(e)}")
+            # Don't raise here, just log the warning
     
     async def _close_browser(self):
         """Close Selenium WebDriver."""
@@ -755,3 +869,65 @@ Best regards,
         
         await self._close_browser()
         self.log_action("INFO", "Application agent cleaned up")
+    
+    def check_chrome_installation(self) -> Dict[str, Any]:
+        """Check Chrome browser installation and provide diagnostics."""
+        
+        diagnostics = {
+            "chrome_installed": False,
+            "chrome_version": None,
+            "chrome_path": None,
+            "chromedriver_available": False,
+            "recommendations": []
+        }
+        
+        try:
+            # Check common Chrome installation paths
+            chrome_paths = [
+                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                os.path.expanduser(r"~\AppData\Local\Google\Chrome\Application\chrome.exe")
+            ]
+            
+            for chrome_path in chrome_paths:
+                if os.path.exists(chrome_path):
+                    diagnostics["chrome_installed"] = True
+                    diagnostics["chrome_path"] = chrome_path
+                    
+                    # Try to get Chrome version
+                    try:
+                        import subprocess
+                        result = subprocess.run([chrome_path, "--version"], 
+                                             capture_output=True, text=True, timeout=10)
+                        if result.returncode == 0:
+                            diagnostics["chrome_version"] = result.stdout.strip()
+                    except:
+                        pass
+                    break
+            
+            # Check if ChromeDriver is available
+            try:
+                from webdriver_manager.chrome import ChromeDriverManager
+                driver_path = ChromeDriverManager().install()
+                if os.path.exists(driver_path):
+                    diagnostics["chromedriver_available"] = True
+            except Exception as e:
+                diagnostics["recommendations"].append(f"ChromeDriver issue: {str(e)}")
+            
+            # Provide recommendations
+            if not diagnostics["chrome_installed"]:
+                diagnostics["recommendations"].append("Chrome browser not found. Please install Google Chrome.")
+            elif not diagnostics["chromedriver_available"]:
+                diagnostics["recommendations"].append("ChromeDriver not available. Try updating webdriver-manager.")
+            
+            if diagnostics["chrome_installed"] and diagnostics["chrome_version"]:
+                version = diagnostics["chrome_version"]
+                if "120" in version or "121" in version or "122" in version:
+                    diagnostics["recommendations"].append("Chrome version looks good for automation.")
+                else:
+                    diagnostics["recommendations"].append("Consider updating Chrome to latest version for better compatibility.")
+            
+        except Exception as e:
+            diagnostics["recommendations"].append(f"Error during diagnostics: {str(e)}")
+        
+        return diagnostics

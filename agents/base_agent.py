@@ -26,6 +26,9 @@ class AgentState(BaseModel):
     # Results from each step
     resume_analysis: Optional[Dict[str, Any]] = Field(default=None, description="Resume analysis results")
     job_search_results: Optional[Dict[str, Any]] = Field(default=None, description="Job search results")
+    glassdoor_jobs: list = Field(default_factory=list, description="Jobs found on Glassdoor")
+    filtered_glassdoor_jobs: list = Field(default_factory=list, description="Filtered Glassdoor jobs")
+    glassdoor_applications: list = Field(default_factory=list, description="Glassdoor application results")
     processed_jobs: list = Field(default_factory=list, description="List of processed jobs")
     final_report: Optional[Dict[str, Any]] = Field(default=None, description="Final workflow report")
     

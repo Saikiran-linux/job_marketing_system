@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from typing import Optional
+from job_config import JobConfig
 
 load_dotenv()
 
@@ -10,44 +11,65 @@ class Config:
     # API Keys
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     
-    # LinkedIn API Configuration
-    LINKEDIN_CLIENT_ID: str = os.getenv("LINKEDIN_CLIENT_ID", "")
-    LINKEDIN_CLIENT_SECRET: str = os.getenv("LINKEDIN_CLIENT_SECRET", "")
-    LINKEDIN_REFRESH_TOKEN: str = os.getenv("LINKEDIN_REFRESH_TOKEN", "")
-    LINKEDIN_ACCESS_TOKEN: str = os.getenv("LINKEDIN_ACCESS_TOKEN", "")
-    
-    # Job Board Credentials
+    # Job Board Credentials (for web automation)
     LINKEDIN_EMAIL: str = os.getenv("LINKEDIN_EMAIL", "")
     LINKEDIN_PASSWORD: str = os.getenv("LINKEDIN_PASSWORD", "")
+    GLASSDOOR_EMAIL: str = os.getenv("GLASSDOOR_EMAIL", "")
+    GLASSDOOR_PASSWORD: str = os.getenv("GLASSDOOR_PASSWORD", "")
     INDEED_EMAIL: str = os.getenv("INDEED_EMAIL", "")
     INDEED_PASSWORD: str = os.getenv("INDEED_PASSWORD", "")
     
     # Database Configuration
+    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+    SUPABASE_ANON_KEY: str = os.getenv("SUPABASE_ANON_KEY", "")
+    SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    
+    # Database Selection
+    USE_SUPABASE: bool = bool(SUPABASE_URL and SUPABASE_ANON_KEY)
+    
+    # Legacy SQLite fallback (kept for backward compatibility)
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///job_applications.db")
     
-    # Application Settings
-    MAX_JOBS_PER_SOURCE: int = int(os.getenv("MAX_JOBS_PER_SOURCE", "50"))
-    APPLICATION_DELAY: int = int(os.getenv("APPLICATION_DELAY", "5"))
-    MAX_DAILY_APPLICATIONS: int = int(os.getenv("MAX_DAILY_APPLICATIONS", "20"))
-    SKILL_MATCH_THRESHOLD: float = float(os.getenv("SKILL_MATCH_THRESHOLD", "0.7"))
-    
-    # LinkedIn API Settings
-    LINKEDIN_API_TIMEOUT: int = int(os.getenv("LINKEDIN_API_TIMEOUT", "30"))
-    LINKEDIN_MAX_RETRIES: int = int(os.getenv("LINKEDIN_MAX_RETRIES", "3"))
-    LINKEDIN_RATE_LIMIT_DELAY: float = float(os.getenv("LINKEDIN_RATE_LIMIT_DELAY", "1.0"))
+    # Web Automation Settings
+    WEB_AUTOMATION_TIMEOUT: int = int(os.getenv("WEB_AUTOMATION_TIMEOUT", "30"))
+    WEB_AUTOMATION_MAX_RETRIES: int = int(os.getenv("WEB_AUTOMATION_MAX_RETRIES", "3"))
+    WEB_AUTOMATION_DELAY: float = float(os.getenv("WEB_AUTOMATION_DELAY", "2.0"))
     
     # File Paths
     RESUME_TEMPLATE_PATH: str = os.getenv("RESUME_TEMPLATE_PATH", "./data/resume_template.docx")
     OUTPUT_RESUME_DIR: str = os.getenv("OUTPUT_RESUME_DIR", "./output/resumes/")
     APPLICATION_LOG_DIR: str = os.getenv("APPLICATION_LOG_DIR", "./logs/")
     
-    # Job Search Settings
-    DEFAULT_LOCATION: str = "remote"
-    DEFAULT_JOB_TYPES: list = ["full-time", "contract", "remote"]
+    # Job Search Settings - Imported from job_config.py
+    MAX_JOBS_PER_SOURCE: int = JobConfig.MAX_JOBS_PER_SOURCE
+    APPLICATION_DELAY: int = JobConfig.APPLICATION_DELAY
+    MAX_DAILY_APPLICATIONS: int = JobConfig.MAX_DAILY_APPLICATIONS
+    SKILL_MATCH_THRESHOLD: float = JobConfig.SKILL_MATCH_THRESHOLD
     
-    # Resume Settings
-    MAX_RESUME_PAGES: int = 2
-    MIN_SKILL_MENTIONS: int = 3
+    # Job Search Configuration - Imported from job_config.py
+    DEFAULT_JOB_ROLE: str = JobConfig.ROLE
+    DEFAULT_JOB_LOCATION: str = JobConfig.LOCATION
+    DEFAULT_MAX_JOBS: int = JobConfig.MAX_JOBS
+    DEFAULT_AUTO_APPLY: bool = JobConfig.AUTO_APPLY
+    
+    # Job Search Filters - Imported from job_config.py
+    JOB_SEARCH_KEYWORDS: list = JobConfig.KEYWORDS
+    JOB_SEARCH_EXCLUDE_KEYWORDS: list = JobConfig.EXCLUDE_KEYWORDS
+    MIN_SALARY: Optional[int] = JobConfig.MIN_SALARY
+    MAX_SALARY: Optional[int] = JobConfig.MAX_SALARY
+    JOB_TYPE: list = JobConfig.JOB_TYPES
+    EXPERIENCE_LEVEL: list = JobConfig.EXPERIENCE_LEVELS
+    
+    # Resume Configuration - Imported from job_config.py
+    DEFAULT_RESUME_PATH: str = JobConfig.RESUME_PATH
+    
+    # Resume Settings - Imported from job_config.py
+    MAX_RESUME_PAGES: int = JobConfig.MAX_RESUME_PAGES
+    MIN_SKILL_MENTIONS: int = JobConfig.MIN_SKILL_MENTIONS
+    
+    # Default Location and Job Types - Imported from job_config.py
+    DEFAULT_LOCATION: str = JobConfig.DEFAULT_LOCATION
+    DEFAULT_JOB_TYPES: list = JobConfig.DEFAULT_JOB_TYPES
     
     @classmethod
     def validate_config(cls) -> bool:
@@ -56,18 +78,22 @@ class Config:
             "OPENAI_API_KEY"
         ]
         
-        # Check LinkedIn API configuration
-        linkedin_fields = [
-            "LINKEDIN_CLIENT_ID",
-            "LINKEDIN_CLIENT_SECRET", 
-            "LINKEDIN_REFRESH_TOKEN"
+        # Check web credentials configuration
+        web_credentials = [
+            "LINKEDIN_EMAIL",
+            "LINKEDIN_PASSWORD", 
+            "GLASSDOOR_EMAIL",
+            "GLASSDOOR_PASSWORD"
         ]
         
-        linkedin_configured = all(getattr(cls, field) for field in linkedin_fields)
+        web_configured = any([
+            getattr(cls, field) for field in web_credentials
+        ])
         
-        if not linkedin_configured:
-            print("Warning: LinkedIn API credentials not fully configured")
-            print("LinkedIn integration will be limited without proper API access")
+        if not web_configured:
+            print("Warning: No job board credentials configured")
+            print("LinkedIn and Glassdoor integration will be disabled")
+            print("Please set up your .env file with email/password credentials")
         
         for field in required_fields:
             if not getattr(cls, field):
