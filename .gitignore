@@ -70,3 +70,13 @@ logs/
 secrets.json
 config.json
 credentials.json
+
+# Supabase setup files
+supabase_setup.sql
+*.sql
+
+# Resume and personal documents
+resume.docx
+*.docx
+data/sample_resume.docx
+data/*.docx
