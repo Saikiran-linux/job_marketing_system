@@ -31,9 +31,19 @@ class Config:
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///job_applications.db")
     
     # Web Automation Settings
-    WEB_AUTOMATION_TIMEOUT: int = int(os.getenv("WEB_AUTOMATION_TIMEOUT", "30"))
+    WEB_AUTOMATION_TIMEOUT: int = int(os.getenv("WEB_AUTOMATION_TIMEOUT", "60"))  # Default 60 seconds
     WEB_AUTOMATION_MAX_RETRIES: int = int(os.getenv("WEB_AUTOMATION_MAX_RETRIES", "3"))
     WEB_AUTOMATION_DELAY: float = float(os.getenv("WEB_AUTOMATION_DELAY", "2.0"))
+    
+    # Enhanced Timeout Settings (in seconds)
+    AUTH_TIMEOUT: int = int(os.getenv("AUTH_TIMEOUT", "45"))  # Authentication timeout
+    SEARCH_TIMEOUT: int = int(os.getenv("SEARCH_TIMEOUT", "90"))  # Job search timeout
+    ELEMENT_TIMEOUT: int = int(os.getenv("ELEMENT_TIMEOUT", "30"))  # Element waiting timeout
+    PAGE_LOAD_TIMEOUT: int = int(os.getenv("PAGE_LOAD_TIMEOUT", "60"))  # Page loading timeout
+    
+    # Network and Retry Settings
+    NETWORK_RETRY_DELAY: float = float(os.getenv("NETWORK_RETRY_DELAY", "3.0"))  # Delay between retries
+    SLOW_NETWORK_MULTIPLIER: float = float(os.getenv("SLOW_NETWORK_MULTIPLIER", "2.5"))  # Multiplier for slow networks
     
     # File Paths
     RESUME_TEMPLATE_PATH: str = os.getenv("RESUME_TEMPLATE_PATH", "./data/resume_template.docx")

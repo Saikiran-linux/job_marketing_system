@@ -32,9 +32,27 @@ class AgentState(BaseModel):
     processed_jobs: list = Field(default_factory=list, description="List of processed jobs")
     final_report: Optional[Dict[str, Any]] = Field(default=None, description="Final workflow report")
     
+    # Additional fields for orchestrator workflow
+    all_jobs: list = Field(default_factory=list, description="All jobs found across sources")
+    extracted_jds: list = Field(default_factory=list, description="Extracted job descriptions")
+    job_links: list = Field(default_factory=list, description="Job application links")
+    tracking_results: Optional[Dict[str, Any]] = Field(default=None, description="Application tracking results")
+    monitoring_results: Optional[Dict[str, Any]] = Field(default=None, description="Monitoring results")
+    tracking_report: Optional[Dict[str, Any]] = Field(default=None, description="Tracking report")
+    updated_statuses: Optional[Dict[str, Any]] = Field(default=None, description="Updated application statuses")
+    monitoring_schedule: Optional[Dict[str, Any]] = Field(default=None, description="Monitoring schedule")
+    
+    # LinkedIn-specific fields
+    linkedin_jobs: list = Field(default_factory=list, description="Jobs found on LinkedIn")
+    filtered_linkedin_jobs: list = Field(default_factory=list, description="Filtered LinkedIn jobs")
+    linkedin_applications: list = Field(default_factory=list, description="LinkedIn application results")
+    
     # Metadata
     end_time: Optional[str] = Field(default=None, description="Workflow end timestamp")
     workflow_duration: Optional[str] = Field(default=None, description="Total workflow duration")
+    
+    # Error tracking
+    errors: list = Field(default_factory=list, description="List of errors encountered during workflow")
 
 class BaseAgent(ABC):
     """Base class for all agents in the job application system using LangGraph."""

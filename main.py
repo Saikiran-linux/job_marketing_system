@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from agents.smart_orchestrator_agent import SmartOrchestratorAgent
+from agents.orchestrator_agent import OrchestratorAgent
 from agents.base_agent import AgentState
 from config import Config
 from job_config import JobConfig
@@ -36,8 +36,8 @@ async def main():
     JobConfig.print_config()
     print("-" * 50)
     
-    # Initialize the smart orchestrator agent
-    orchestrator = SmartOrchestratorAgent()
+    # Initialize the simplified orchestrator agent
+    orchestrator = OrchestratorAgent()
     
     # Create initial state using JobConfig
     initial_state = AgentState(
@@ -189,14 +189,21 @@ async def run_example_workflow():
     try:
         orchestrator = SmartOrchestratorAgent()
         
-        # Get the workflow graph for inspection
-        workflow_graph = orchestrator.get_workflow_graph()
-        print(f"📊 Workflow graph created with {len(workflow_graph.nodes)} nodes")
+        # Show available agents and their status
+        available_sources = orchestrator.get_available_sources()
+        credential_status = orchestrator.get_credential_status()
         
-        # Show workflow structure
-        print("\n🔄 Workflow Structure:")
-        for node_name in workflow_graph.nodes:
-            print(f"   • {node_name}")
+        print(f"📊 Available job sources: {len(available_sources)}")
+        
+        print("\n🔄 Available Sources:")
+        for source, description in available_sources.items():
+            print(f"   • {source}: {description}")
+        
+        print("\n🔐 Credential Status:")
+        for platform, status in credential_status.items():
+            for auth_type, available in status.items():
+                status_icon = "✅" if available else "❌"
+                print(f"   • {platform} ({auth_type}): {status_icon}")
         
         print("\n✅ Example workflow setup completed successfully!")
         
@@ -219,6 +226,7 @@ def show_usage():
     print("  LINKEDIN_PASSWORD                 # LinkedIn account password")
     print("  GLASSDOOR_EMAIL                   # Glassdoor account email")
     print("  GLASSDOOR_PASSWORD                # Glassdoor account password")
+    print("  PLAYWRIGHT_BROWSERS_PATH          # Path to Playwright browsers (optional)")
 
 if __name__ == "__main__":
     import argparse

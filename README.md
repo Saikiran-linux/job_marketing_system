@@ -20,23 +20,23 @@ The system uses LangGraph's workflow approach with a modular, agent-based archit
 ### Workflow Structure
 
 ```
-resume_analysis → job_search → process_jobs → generate_report
+scraper → analyzer → resume → application → tracker
 ```
 
 ### Architecture Layers
 
 #### **Orchestration Layer**
-- **SmartOrchestratorAgent**: Main workflow coordinator using LangGraph
+- **OrchestratorAgent**: Main workflow coordinator using LangGraph
 - **Workflow Engine**: State management and flow control
 - **Session Manager**: Tracking and recovery mechanisms
 
 #### **Agent Layer**
 - **Core Agents**: Specialized agents for specific tasks
-  - **Resume Analysis Agent**: AI-powered resume parsing and analysis
-  - **Job Search Agent**: Multi-source job discovery
-  - **Skills Analysis Agent**: AI-powered skill extraction and matching
-  - **Resume Modification Agent**: AI resume optimization
+  - **Scraper Agent**: Multi-source job discovery and data extraction
+  - **Analyzer Agent**: AI-powered job analysis and requirement extraction
+  - **Resume Agent**: AI-powered resume parsing and optimization
   - **Application Agent**: Web automation and job submission
+  - **Tracker Agent**: Application tracking and status monitoring
 - **Base Infrastructure**: Error handling, retries, and logging
 
 #### **Data Layer**
@@ -55,7 +55,7 @@ resume_analysis → job_search → process_jobs → generate_report
 ## 🎯 Key Features
 
 - **Web Automation**: No API tokens needed - just email/password
-- **Multi-Platform Support**: LinkedIn, Glassdoor, and Indeed integration
+- **Multi-Platform Support**: LinkedIn, Glassdoor, and general job search integration
 - **AI-Powered Analysis**: OpenAI integration for resume analysis and job matching
 - **Smart Filtering**: Automatic job filtering based on your preferences
 - **Auto-Application**: Automated job applications (when enabled)
@@ -68,7 +68,7 @@ resume_analysis → job_search → process_jobs → generate_report
 ### Prerequisites
 
 1. **Python 3.7+** with required packages
-2. **Chrome Browser** (for Selenium automation)
+2. **Chrome Browser** (for Playwright automation)
 3. **LinkedIn Account** (for job searching)
 4. **Glassdoor Account** (for job searching)
 5. **OpenAI API Key** (for AI-powered features)
@@ -86,7 +86,12 @@ resume_analysis → job_search → process_jobs → generate_report
    pip install -r requirements.txt
    ```
 
-3. **Set up environment variables**:
+3. **Install Playwright browsers**:
+   ```bash
+   python install_playwright.py
+   ```
+
+4. **Set up environment variables**:
    ```bash
    cp env_template.txt .env
    # Edit .env with your credentials
@@ -107,11 +112,9 @@ LINKEDIN_EMAIL=your_linkedin_email@example.com
 LINKEDIN_PASSWORD=your_linkedin_password
 GLASSDOOR_EMAIL=your_glassdoor_email@example.com
 GLASSDOOR_PASSWORD=your_glassdoor_password
-INDEED_EMAIL=your_indeed_email@example.com
-INDEED_PASSWORD=your_indeed_password
 
 # Web Automation Settings
-WEB_AUTOMATION_TIMEOUT=30
+WEB_AUTOMATION_TIMEOUT=60
 WEB_AUTOMATION_MAX_RETRIES=3
 WEB_AUTOMATION_DELAY=2.0
 
@@ -129,7 +132,7 @@ USE_SUPABASE=true
 
 ### Job Search Configuration (job_config.py)
 
-Job search settings are now managed in `job_config.py` for easier customization:
+Job search settings are managed in `job_config.py` for easier customization:
 
 ```python
 class JobConfig:
@@ -197,11 +200,11 @@ JobConfig.LOCATION = "New York, NY"
 cp env_template.txt .env
 # Edit .env with your LinkedIn/Glassdoor email/password
 
-# Download ChromeDriver (if you have browser automation issues)
-python download_chromedriver.py
+# Install Playwright browsers (if you have browser automation issues)
+python install_playwright.py
 
-# Run the web automation example
-python examples/web_automation_example.py
+# Run the main workflow
+python main.py
 ```
 
 ### 2. Run the Full Workflow
@@ -216,37 +219,7 @@ python main.py
 python main.py --example
 ```
 
-### 4. Run LangGraph Demo
-
-```bash
-python examples/langgraph_example.py
-```
-
 ## 📋 Usage Examples
-
-### Web Automation Example
-
-```python
-from agents.smart_orchestrator_agent import SmartOrchestratorAgent
-from agents.base_agent import AgentState
-from job_config import JobConfig
-
-# Initialize the orchestrator
-orchestrator = SmartOrchestratorAgent()
-
-# Create initial state
-initial_state = AgentState(
-    role=JobConfig.ROLE,
-    resume_path=JobConfig.RESUME_PATH,
-    location=JobConfig.LOCATION,
-    max_jobs=JobConfig.MAX_JOBS,
-    auto_apply=JobConfig.AUTO_APPLY,
-    # ... other state properties
-)
-
-# Execute the workflow
-final_state = await orchestrator.execute(initial_state)
-```
 
 ### Basic Job Search
 
@@ -264,10 +237,34 @@ jobs = await agent.search_jobs(
 ### Resume Analysis
 
 ```python
-from agents.resume_analysis_agent import ResumeAnalysisAgent
+from agents.resume_agent import ResumeAgent
 
-agent = ResumeAnalysisAgent()
+agent = ResumeAgent()
 analysis = await agent.analyze_resume("path/to/resume.docx")
+```
+
+### Full Workflow Execution
+
+```python
+from agents.orchestrator_agent import OrchestratorAgent
+from agents.base_agent import AgentState
+from job_config import JobConfig
+
+# Initialize the orchestrator
+orchestrator = OrchestratorAgent()
+
+# Create initial state
+initial_state = AgentState(
+    role=JobConfig.ROLE,
+    resume_path=JobConfig.RESUME_PATH,
+    location=JobConfig.LOCATION,
+    max_jobs=JobConfig.MAX_JOBS,
+    auto_apply=JobConfig.AUTO_APPLY,
+    # ... other state properties
+)
+
+# Execute the workflow
+final_state = await orchestrator.execute(initial_state)
 ```
 
 ## 📁 Project Structure
@@ -275,14 +272,15 @@ analysis = await agent.analyze_resume("path/to/resume.docx")
 ```
 marketin_jobs_/
 ├── agents/                          # Agent implementations
-│   ├── smart_orchestrator_agent.py # Main workflow coordinator
+│   ├── orchestrator_agent.py       # Main workflow coordinator
+│   ├── scraper_agent.py            # Job search and data extraction
+│   ├── analyzer_agent.py           # Job analysis and requirements
+│   ├── resume_agent.py             # Resume analysis and optimization
+│   ├── application_agent.py        # Job applications
+│   ├── tracker_agent.py            # Application tracking
 │   ├── linkedin_web_agent.py       # LinkedIn automation
 │   ├── glassdoor_web_agent.py      # Glassdoor automation
 │   ├── job_search_agent.py         # General job search
-│   ├── resume_analysis_agent.py    # Resume analysis
-│   ├── application_agent.py        # Job applications
-│   ├── skills_analysis_agent.py    # Skills analysis
-│   ├── resume_modification_agent.py # Resume optimization
 │   └── base_agent.py               # Base agent class
 ├── utils/                           # Utility functions
 │   ├── database.py                 # Database operations
@@ -291,14 +289,6 @@ marketin_jobs_/
 │   ├── resume_editor.py            # Resume editing
 │   ├── supabase_database.py        # Supabase integration
 │   └── workflow_visualizer.py      # Workflow visualization
-├── examples/                        # Example scripts
-│   ├── basic_usage.py              # Basic usage examples
-│   ├── advanced_usage.py           # Advanced usage examples
-│   ├── web_automation_example.py   # Web automation demo
-│   ├── langgraph_example.py        # LangGraph workflow demo
-│   └── workflow_visualization_example.py
-├── data/                           # Data files
-│   └── sample_resume.docx          # Sample resume
 ├── logs/                           # Application logs
 ├── config.py                       # Main configuration
 ├── job_config.py                   # Job search configuration
@@ -313,8 +303,8 @@ marketin_jobs_/
 Customize browser behavior and automation settings:
 
 ```python
-# In web agents
-WEB_AUTOMATION_TIMEOUT = 30          # Timeout for operations
+# In config.py
+WEB_AUTOMATION_TIMEOUT = 60          # Timeout for operations
 WEB_AUTOMATION_MAX_RETRIES = 3       # Max retry attempts
 WEB_AUTOMATION_DELAY = 2.0           # Delay between actions
 ```
@@ -365,7 +355,7 @@ DATABASE_URL=sqlite:///job_applications.db
 
 1. **Browser Automation Issues**
    - Ensure Chrome is installed and up to date
-   - Check that ChromeDriver version matches Chrome version
+   - Check that Playwright browsers are properly installed
    - Verify no other Chrome instances are running
 
 2. **Login Failures**
@@ -381,22 +371,22 @@ DATABASE_URL=sqlite:///job_applications.db
 ### Browser Troubleshooting
 
 **Common Browser Issues:**
-- **ChromeDriver Version Mismatch**: Ensure ChromeDriver version matches your Chrome browser version
+- **Playwright Browser Issues**: Ensure Playwright browsers are properly installed
 - **Browser Crashes**: Close other Chrome instances and restart the application
 - **Element Not Found**: Job sites may have changed their HTML structure - check for updates
 - **Rate Limiting**: Increase delays between actions and reduce request frequency
 
 **Solutions:**
-- **Automatic ChromeDriver Download**: Run `python download_chromedriver.py` to get the correct version
-- Update Chrome and ChromeDriver to latest versions
+- **Automatic Browser Installation**: Run `playwright install` to get the correct browser versions
+- Update Playwright to latest version
 - Clear browser cache and cookies
 - Use headless mode for better stability
 - Implement exponential backoff for failed requests
 
 **Windows-Specific Issues:**
-- **WinError 193**: Usually indicates ChromeDriver compatibility issues
-- **ChromeDriver Download**: Use the provided download script for Windows compatibility
-- **Path Issues**: Ensure ChromeDriver is in your PATH or current directory
+- **Browser Compatibility**: Ensure Playwright browsers are properly installed
+- **Browser Installation**: Use `playwright install` for Windows compatibility
+- **Path Issues**: Ensure Playwright is in your PATH or current directory
 
 ### Glassdoor Stability
 
@@ -450,23 +440,24 @@ For issues and questions:
 
 ## 🔄 Recent Changes
 
+### LangGraph Integration
+- **Complete rewrite** using LangGraph for workflow orchestration
+- **6-agent architecture** with clear separation of concerns
+- **Declarative workflow definition** with visual graphs
+- **Built-in state management** and error handling
+- **Scalable architecture** for adding new agents
+
+### Web Automation
+- **No API tokens required** for job board access
+- **Email/password authentication** for LinkedIn and Glassdoor
+- **Playwright-based automation** for reliable job site interaction
+- **Built-in safety features** to prevent rate limiting
+
 ### Configuration Migration
 - **Job search configuration** moved from `.env` to `job_config.py`
 - **Centralized configuration** for easier customization
 - **Preset support** for common job roles
 - **Backward compatibility** maintained
-
-### Web Automation
-- **No API tokens required** for job board access
-- **Email/password authentication** for LinkedIn and Glassdoor
-- **Selenium-based automation** for reliable job site interaction
-- **Built-in safety features** to prevent rate limiting
-
-### LangGraph Integration
-- **Complete rewrite** using LangGraph for workflow orchestration
-- **Declarative workflow definition** with visual graphs
-- **Built-in state management** and error handling
-- **Scalable architecture** for adding new agents
 
 ---
 

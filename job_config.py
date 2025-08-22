@@ -37,6 +37,48 @@ class JobConfig:
     DEFAULT_LOCATION = "remote"
     DEFAULT_JOB_TYPES = ["full-time", "contract", "remote"]
     
+    # Parallel Execution Settings
+    ENABLE_PARALLEL_SEARCH = True
+    MAX_CONCURRENT_SEARCHES = 5
+    SEARCH_TIMEOUT_PER_SOURCE = 30  # seconds
+    
+    # Job Sources Configuration
+    JOB_SOURCES = {
+        "indeed": {
+            "enabled": True,
+            "priority": 1,
+            "max_jobs_per_source": 25
+        },
+        "linkedin": {
+            "enabled": True,
+            "priority": 1,
+            "max_jobs_per_source": 25
+        },
+        "glassdoor": {
+            "enabled": True,
+            "priority": 2,
+            "max_jobs_per_source": 20
+        },
+        "google_jobs": {
+            "enabled": True,
+            "priority": 2,
+            "max_jobs_per_source": 20
+        },
+        "company_websites": {
+            "enabled": True,
+            "priority": 3,
+            "max_jobs_per_source": 15
+        }
+    }
+    
+    # Company Websites to Search
+    TARGET_COMPANIES = [
+        "Google", "Microsoft", "Apple", "Amazon", "Meta", "Netflix",
+        "Uber", "Airbnb", "Stripe", "Palantir", "OpenAI", "Anthropic",
+        "Databricks", "Snowflake", "MongoDB", "Elastic", "GitHub",
+        "NVIDIA", "Intel", "AMD", "Oracle", "Salesforce", "Adobe"
+    ]
+    
     # Application Behavior
     SKILL_MATCH_THRESHOLD = 0.7
     
@@ -61,27 +103,34 @@ class JobConfig:
             "job_types": cls.JOB_TYPES,
             "experience_levels": cls.EXPERIENCE_LEVELS,
             "max_jobs": cls.MAX_JOBS,
-            "auto_apply": cls.AUTO_APPLY
+            "auto_apply": cls.AUTO_APPLY,
+            "enable_parallel_search": cls.ENABLE_PARALLEL_SEARCH,
+            "max_concurrent_searches": cls.MAX_CONCURRENT_SEARCHES
         }
+    
+    @classmethod
+    def get_enabled_sources(cls) -> List[str]:
+        """Get list of enabled job sources."""
+        return [source for source, config in cls.JOB_SOURCES.items() if config["enabled"]]
+    
+    @classmethod
+    def get_source_config(cls, source_name: str) -> Optional[dict]:
+        """Get configuration for a specific job source."""
+        return cls.JOB_SOURCES.get(source_name)
     
     @classmethod
     def print_config(cls):
         """Print current job search configuration."""
-        print("🔍 Job Search Configuration:")
-        print(f"   • Role: {cls.ROLE}")
-        print(f"   • Location: {cls.LOCATION}")
-        print(f"   • Max Jobs: {cls.MAX_JOBS}")
-        print(f"   • Auto-apply: {'Yes' if cls.AUTO_APPLY else 'No'}")
-        print(f"   • Keywords: {', '.join(cls.KEYWORDS)}")
-        print(f"   • Exclude: {', '.join(cls.EXCLUDE_KEYWORDS)}")
-        print(f"   • Salary: ${cls.MIN_SALARY or 'Any'} - ${cls.MAX_SALARY or 'Any'}")
-        print(f"   • Job Types: {', '.join(cls.JOB_TYPES)}")
-        print(f"   • Experience: {', '.join(cls.EXPERIENCE_LEVELS)}")
-        print(f"   • Resume: {cls.RESUME_PATH}")
-        print(f"   • Max Jobs Per Source: {cls.MAX_JOBS_PER_SOURCE}")
-        print(f"   • Skill Match Threshold: {cls.SKILL_MATCH_THRESHOLD}")
-        print(f"   • Max Daily Applications: {cls.MAX_DAILY_APPLICATIONS}")
-        print(f"   • Application Delay: {cls.APPLICATION_DELAY} seconds")
+        print("=== Job Search Configuration ===")
+        print(f"Role: {cls.ROLE}")
+        print(f"Location: {cls.LOCATION}")
+        print(f"Max Jobs: {cls.MAX_JOBS}")
+        print(f"Auto Apply: {cls.AUTO_APPLY}")
+        print(f"Parallel Search: {cls.ENABLE_PARALLEL_SEARCH}")
+        print(f"Max Concurrent Searches: {cls.MAX_CONCURRENT_SEARCHES}")
+        print(f"Job Sources: {', '.join(cls.get_enabled_sources())}")
+        print(f"Target Companies: {len(cls.TARGET_COMPANIES)} companies")
+        print("================================")
 
 # Predefined job configurations for common roles
 JOB_PRESETS = {
