@@ -71,6 +71,11 @@ secrets.json
 config.json
 credentials.json
 
+# Cursor MCP configuration (contains sensitive credentials)
+.cursor/mcp.json
+.cursor/mcp.json.template
+.cursor/mcp_config.py
+
 # Supabase setup files
 supabase_setup.sql
 *.sql
