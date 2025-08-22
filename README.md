@@ -1,4 +1,4 @@
-# LangGraph-based Job Application System
+# Job Application System
 
 A sophisticated multi-agent system for automated job searching and application, built with **LangGraph** for robust workflow orchestration. This system uses web automation to interact with job boards using your regular email/password credentials - no API tokens required!
 
